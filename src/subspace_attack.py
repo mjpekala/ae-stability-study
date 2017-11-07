@@ -181,6 +181,8 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
   """
   n_images, n_successful = 0, 0
 
+  print('[WARNING] this code is still under development!!!')
+
   for batch_id, (filenames, x0) in enumerate(_load_images(input_dir, model.batch_shape)):
     n = len(filenames)
     assert(n==1) # for now, we assume batch size is 1
