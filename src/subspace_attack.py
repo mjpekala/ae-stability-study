@@ -225,20 +225,21 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
     #--------------------------------------------------
     # Examine the subset of r_i
     #--------------------------------------------------
-    for gamma_pct in [.1, .2, .4, .6, .9]:
+    for gamma_pct in [.4, .6, .9]:
       gamma = gamma_pct * (loss_g - loss0)
 
       # Try out the subset of r_i 
       alpha = gamma / (epsilon * norm(g.flatten(),2))
       k = min(g.size, np.floor(1.0/(alpha*alpha)))
       k = int(max(k, 1))
-      print(k) # TEMP
+      print('k=%d' % k) # TEMP
 
       R = gaas(g.flatten(),k)
 
       n_successful = 0
       for ii in range(k):
-        r_i = R[ii,:] * epsilon
+        r_i = R[:,ii] * epsilon
+        r_i = np.reshape(r_i, x0.shape)
         x_adv = np.clip(x0 + r_i, -1, 1)
         pred_ri = sess.run(model.output, feed_dict={model.x_tf : x_adv})
         n_successful += np.argmax(pred_ri,axis=1) != y0_scalar
