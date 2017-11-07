@@ -1,4 +1,5 @@
 """
+  Implements the Gradient aligned adversarial "subspace" (GAAS) of [tra17].
 
   REFERENCES:
    [tra17] Tramer et al. "The Space of Transferable Adversarial
