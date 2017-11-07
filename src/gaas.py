@@ -52,7 +52,7 @@ def gaas(g, k, sanity_check=True):
   if sanity_check:
     # the r_i should be orthogonal
     RtR = np.dot(R.T, R)
-    assert(norm(RtR-np.eye(k,k), 'fro') < 1e-9)
+    assert(norm(RtR-np.eye(k,k), 'fro') < 1e-5)
    
     # make sure Qg = ||g||_2 z
     #
@@ -60,7 +60,7 @@ def gaas(g, k, sanity_check=True):
     #       the r_i as columns in R.
     #
     err = np.dot(R.T, g) - norm(g,2) * z[:k]
-    assert(norm(err,2) < 1e-6)
+    assert(norm(err,2) < 1e-5)
  
     # make sure <g,r_i> behaves as expected.
     for ii in range(k):
