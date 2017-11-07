@@ -23,6 +23,8 @@ import tensorflow as tf
 from tensorflow.contrib.slim.nets import inception, resnet_v2
 slim = tf.contrib.slim
 
+from gaas import gaas
+
 
 #-------------------------------------------------------------------------------
 # Functions for dealing with data and tensorflow models
@@ -134,100 +136,6 @@ class InceptionV3:
 
 
 #-------------------------------------------------------------------------------
-# Functions to implement the Gradient aligned adversarial "subspace" (GAAS)
-# technique developed by [tra17].
-#-------------------------------------------------------------------------------
-
-def _unitary_error(X):
-  """ Frobenious norm of (X'X - I)
-  """
-  err = np.dot(X.T, X) - np.eye(X.shape[1], X.shape[1])
-  return np.linalg.norm(err, 'fro')
-
-
-
-def null(a, rtol=1e-5):
-  """ Returns the nullspace of a.  This is just an application of SVD.
-  """
-  u,s,v = np.linalg.svd(a)
-  rank = (s > rtol*s[0]).sum()
-  return rank, v[rank:].T.copy()
-
-
-
-def gaas(g, k):
-  """ Computes the gradient aligned adversarial "subspace" (GAAS) of [tra17].
-
-   g : the gradient from a single example (presumably an image)
-   k : the number of orthogonal vectors
-
-   Q : the matrix S'R ; note the first k rows of Q are the r_i
-
-  """
-  d = g.size             # dimension of gradient
-  g_vec = g.flatten()    # gradient as a vector
-
-  #------------------------------------------------------------
-  # construct the unitary matrix R, which has the property:
-  #
-  #    Rg = ||g||_2 e_1
-  #
-  # where e_1 is the first standard basis vector.
-  # Note that r_1 (the first row of R) has unit 
-  # norm by construction; orthogonality of the
-  # r_i then follows from the SVD.
-  #------------------------------------------------------------
-  r1 = g_vec / norm(g_vec, 2)
-  r1 = r1[:,np.newaxis]
-
-  rank, R_null = null(r1.T)
-  assert(rank == 1)
-  R = np.r_[r1.T, R_null.T]
-
-  #------------------------------------------------------------
-  # construct the unitary matrix S, which has the property that
-  #
-  #   Sz = e_1
-  #
-  # where z := \sum_{i=1}^k k^{-1/2} e_i
-  #------------------------------------------------------------
-  z_a = (1. / np.sqrt(k)) * np.ones((k,1)) # the first k elts of z
-  rank, Z_null = null(z_a.T)
-  assert(rank == 1)
-
-  S_a = np.r_[z_a.T, Z_null.T]
-  S_b = np.eye(d-k, d-k)
-  S = blkdiag(S_a, S_b)
-
-  Q = np.dot(S.T, R)
-
-  #------------------------------------------------------------
-  # Here we check the desired property that
-  #
-  #  Qg = ||g||_2 z
-  #------------------------------------------------------------
-  z = np.r_[z_a, np.zeros((d-k,1))]
-  err = np.dot(Q,g_vec) - norm(g_vec,2) * z.flatten()
-  assert(norm(err,2) < 1e-9)
-
-  return Q
-
-
-
-def sample_gaas(g, k, num_samps=1):
-  Q = gaas(g,k)
-  R = Q[:k,:].T    # the columns of R are the r_i defining the "subspace"
-
-  out = []
-  for ii in range(num_samps):
-    coeff = np.random.uniform(0,1,size=(k,1))
-    coeff /= np.sum(coeff)   # sum-to-one constraint
-
-    putative_ae = np.dot(R,coeff)
-    out.append(np.reshape(putative_ae, g.shape))
-
-  return out
-
 
 
 def fgsm_attack(sess, model, epsilon, input_dir, output_dir):
@@ -324,12 +232,13 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
       alpha = gamma / (epsilon * norm(g.flatten(),2))
       k = min(g.size, np.floor(1.0/(alpha*alpha)))
       k = int(max(k, 1))
+      print(k) # TEMP
 
-      Q = gaas(g.flatten(),k)
+      R = gaas(g.flatten(),k)
 
       n_successful = 0
       for ii in range(k):
-        r_i = Q[ii,:] * epsilon
+        r_i = R[ii,:] * epsilon
         x_adv = np.clip(x0 + r_i, -1, 1)
         pred_ri = sess.run(model.output, feed_dict={model.x_tf : x_adv})
         n_successful += np.argmax(pred_ri,axis=1) != y0_scalar
@@ -338,45 +247,6 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
 
   print('[GAAS]: AE success rate: %0.2f%%' % (100.* n_successful / n_images))
 
-
-#-------------------------------------------------------------------------------
-# Unit tests
-#-------------------------------------------------------------------------------
-
-class TestEverything(unittest.TestCase):
-
-  def test_unitary_error(self):
-    X = np.eye(3,3);
-    self.assertTrue(_unitary_error(X) < 1e-9)
-
-    X = np.random.rand(10,10)
-    self.assertTrue(_unitary_error(X) > 1e-3)
-
-
-  def test_gaas(self):
-    k = 2;  alpha = np.sqrt(1.0/k)
-
-    for _ in range(10):
-      G_fake = np.random.rand(10,10,3)
-      Q = gaas(G_fake, k)
-      self.assertTrue(_unitary_error(Q) < 1e-9)
-
-      # next, make sure lemma 1 of [tra17] holds for each r_i
-      R = Q[:k,:].T
-      self.assertTrue(_unitary_error(R) < 1e-9)
-      for ii in range(k):
-        gtri = np.dot(G_fake.flatten(), R[:,ii])  # <g, r_i>
-        delta = (gtri + 1e-6) - alpha * norm(G_fake.flatten(),2)
-        self.assertTrue(delta > 0)
-
-
-  def test_sample_gaas(self):
-    G_fake = np.random.rand(10,10,3)
-    n_samps = 5
-    ae = sample_gaas(G_fake, 3, n_samps)
-
-    self.assertTrue(len(ae) == n_samps)
-    self.assertTrue(np.all(ae[0].shape == G_fake.shape))
 
 
 
