@@ -22,6 +22,12 @@ import pdb
 
 def gaas(g, k, sanity_check=True):
   """
+     g : the gradient of the loss (a tensor)
+     k : the GAAS dimensionality (a scalar)
+
+     Returns:
+     R : a dxk matrix of k orthogonal vectors satisfying the GAAS conditions
+
   """
   g = g.flatten() 
 
@@ -74,9 +80,9 @@ def gaas(g, k, sanity_check=True):
 
 def householder_vec(x):
   """ Returns elements needed to construct Householder 
-      reflection matrix for the vector x.
+      reflection matrix for the vector x, i.e.
 
-      H = I - \beta v v'
+          H = I - \beta v v'
 
       where H x = ||x||_2 e_1
 
@@ -102,11 +108,12 @@ def householder_vec(x):
 
 
 def apply_householder_to_vector(v, beta, x):
-  """
-    Applying a householder transformation H to a vector x
+  """ Computes Householder reflection of vector x.
+
+    Applying a Householder transformation H to a vector x
     does not require the explict construction of H since
    
-      H x = (I - \beta vv') x = x - \beta v (v' x)
+        H x = (I - \beta vv') x = x - \beta v (v' x)
    
     In particular, this avoids the deadly outer product vv'.
     See also 5.1.4 in Golub and Van Loan.
