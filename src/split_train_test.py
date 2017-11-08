@@ -7,6 +7,8 @@ import numpy as np
 import tensorflow as tf
 import pdb
 
+__author__ = "mjp"
+
 
 if __name__ == "__main__":
   input_dir = sys.argv[1]
