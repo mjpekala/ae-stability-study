@@ -1,7 +1,8 @@
-""" SUBSPACE_ATTACK  Code for using GAAS [tra17] to analyze AE.
+""" This code uses the Gradient Aligned Adversarial Subspace (GAAS) 
+    of [tra17] to analyze AE.
 
 
-  References:
+  REFERENCES:
   [tra17] Tramer et al. "The Space of Transferable Adversarial Examples," 2017.
 
 """
@@ -18,6 +19,7 @@ import numpy as np
 from numpy.linalg import norm
 from scipy.linalg import block_diag as blkdiag
 from scipy.misc import imread, imsave
+from scipy.io import savemat
 
 import tensorflow as tf
 from tensorflow.contrib.slim.nets import inception, resnet_v2
@@ -175,6 +177,29 @@ def fgsm_attack(sess, model, epsilon, input_dir, output_dir):
 
 
 
+def _sample_adversarial_direction(model, x0, y0, g, epsilon_max):
+  """ Evaluates model loss and predictions at multiple points along 
+      a (presumed) adversarial direction.
+  """
+  g_normalized = g / norm(g.flatten(),2)  # unit \ell_2 norm
+
+  v = [.01, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1.0]
+
+  out = np.zeros((len(v),3))
+
+  for idx, pct in enumerate(v):
+    x_adv = np.clip(x0 + pct * epsilon_max * g_normalized, -1, 1)
+
+    loss = sess.run(model.loss, feed_dict={model.x_tf : x_adv, model.y_tf : y0})
+    pred = sess.run(model.output, feed_dict={model.x_tf : x_adv})
+
+    out[idx,0] = pct * epsilon_max
+    out[idx,1] = loss
+    out[idx,2] = np.argmax(pred,axis=1)
+
+  return out, x_adv
+
+
 
 def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
   """ Computes subset of attacks using GAAS method.
@@ -206,35 +231,41 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
     # Determine whether moving epsilon along the gradient produces an AE.
     # If not, then the subset of r_i is unlikely to be useful.
     #--------------------------------------------------
-    x_adv = np.clip(x0 + epsilon * g_normalized, -1, 1)
-    pred_g = sess.run(model.output, feed_dict={model.x_tf : x_adv})
-    loss_g = sess.run(model.loss, feed_dict={model.x_tf : x_adv, model.y_tf : y0})
+    out, x_adv = _sample_adversarial_direction(model, x0, y0, g_normalized, epsilon)
+    loss_g = out[-1,1]
+    was_ae_successful = np.any(out[:,2] != y0_scalar)
 
     delta_x = x_adv - x0
-    was_ae_successful = np.argmax(pred_g,axis=1) != y0_scalar
 
     print('[GAAS]: %d successful? %d, ||x||_2 = %0.3f, ||x - x_g||_2 = %0.3f, ||x - x_g||_\inf = %0.3f, delta_loss=%0.3f' % (batch_id, was_ae_successful, norm(x0.flatten(),2), norm(delta_x.flatten(), 2), norm(delta_x.flatten(), np.inf), loss_g - loss0))
 
-    # save images for subsequent analysis
+    # save results for subsequent analysis
     fn = os.path.join(output_dir, 'grad_%d_' % was_ae_successful + filenames[0])
     imsave(fn,  x_adv[0,...])  
+    fn = os.path.join(output_dir, 'gradient_samps_' + filenames[0].replace('.png', '.npz'))
+    print(fn) # TEMP
+    savemat(fn, {'out' : out})
 
     n_images += 1
     if not was_ae_successful:
       continue
     n_successful += 1
 
+    print(out) 
+
     #--------------------------------------------------
     # Examine the subset of r_i
     #--------------------------------------------------
-    for gamma_pct in [.4, .6, .9]:
+    for gamma_pct in [.8, .9, .99]:
       gamma = gamma_pct * (loss_g - loss0)
 
       # Try out the subset of r_i 
       alpha = gamma / (epsilon * norm(g.flatten(),2))
       k = min(g.size, np.floor(1.0/(alpha*alpha)))
       k = int(max(k, 1))
+
       print('k=%d' % k) # TEMP
+      k = min(k, 1000)  # put a limit on k for practical reasons
 
       R = gaas(g.flatten(),k)
 
@@ -246,7 +277,7 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
         pred_ri = sess.run(model.output, feed_dict={model.x_tf : x_adv})
         n_successful += np.argmax(pred_ri,axis=1) != y0_scalar
 
-      print('    gamma_pct=%0.2f, k=%d, ri_succ_rate=%0.3f%%' % (gamma_pct, k, 100.*n_successful / k))
+      print('    gamma=%0.2f, k=%d, ri_succ_rate=%0.3f%%' % (gamma, k, 100.*n_successful / k))
 
   print('[GAAS]: AE success rate: %0.2f%%' % (100.* n_successful / n_images))
 
@@ -257,6 +288,8 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
 #-------------------------------------------------------------------------------
 
 if __name__ == "__main__":
+  np.set_printoptions(precision=4, suppress=True)  # make output easier to read
+
   if len(sys.argv) < 2:
     # if called without arguments, run some unit tests
     unittest.main()
@@ -264,7 +297,7 @@ if __name__ == "__main__":
     # otherwise, attack some data
     input_dir = sys.argv[1]
     output_dir = sys.argv[2]
-    epsilon_l2 = 0.05
+    epsilon_l2 = 0.1   
     epsilon_linf = 0.4
 
     print('[info]: epsilon_l2=%0.3f, epsilon_linf=%0.3f' % (epsilon_l2, epsilon_linf))
