@@ -19,4 +19,4 @@ dataset :
 # shows how to use attack codes
 attack :
 	\rm -rf ./Output && mkdir ./Output
-	python subspace_attack.py $(LOCAL_DATA)/Test ./Output
+	python subspace_attack.py $(LOCAL_DATA)/Test ./Output | tee ./Output/log.txt
