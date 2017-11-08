@@ -56,7 +56,7 @@ def gaas(g, k, sanity_check=True):
 
   # (optional) check the solution for correctness
   if sanity_check:
-    # the r_i should be orthogonal
+    # the r_i should be orthonormal
     RtR = np.dot(R.T, R)
     assert(norm(RtR-np.eye(k,k), 'fro') < 1e-5)
    

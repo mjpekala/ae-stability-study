@@ -237,7 +237,7 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
 
     delta_x = x_adv - x0
 
-    print('[GAAS]: %d successful? %d, ||x||_2 = %0.3f, ||x - x_g||_2 = %0.3f, ||x - x_g||_\inf = %0.3f, delta_loss=%0.3f' % (batch_id, was_ae_successful, norm(x0.flatten(),2), norm(delta_x.flatten(), 2), norm(delta_x.flatten(), np.inf), loss_g - loss0))
+    print('[GAAS]: image %d successful? %d, y0=%d, ||x||_2 = %0.3f, ||x - x_g||_2 = %0.3f, ||x - x_g||_\inf = %0.3f, delta_loss=%0.3f' % (batch_id, was_ae_successful, y0_scalar, norm(x0.flatten(),2), norm(delta_x.flatten(), 2), norm(delta_x.flatten(), np.inf), loss_g - loss0))
     sys.stdout.flush()
 
     # save results for subsequent analysis
@@ -254,21 +254,26 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
     print(out) 
 
     #--------------------------------------------------
-    # Examine the subset of r_i
+    # Check whether the r_i are also adversarial directions
+    # (if one moves epsilon along that direction)
     #--------------------------------------------------
     for gamma_pct in [.8, .9, .99]:
+      # We have to choose how much the loss should change (i.e. gamma)
+      # Currently, this is based on the maximum change determined above.
+      # It may be there is a better approach...
       gamma = gamma_pct * (loss_g - loss0)
 
-      # Try out the subset of r_i 
+      # Compute k ("subspace" dimension)
       alpha = gamma / (epsilon * norm(g.flatten(),2))
       k = min(g.size, np.floor(1.0/(alpha*alpha)))
       k = int(max(k, 1))
 
       print('k=%d' % k) # TEMP
-      k = min(k, 1000)  # put a limit on k for practical reasons
+      k = min(k, 1000)  # put a limit on k for practical (computational) reasons
 
       R = gaas(g.flatten(),k)
 
+      # count how many of the r_i are also successful AE directions
       n_successful = 0
       for ii in range(k):
         r_i = R[:,ii] * epsilon
