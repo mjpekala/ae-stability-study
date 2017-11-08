@@ -242,7 +242,7 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
     # save results for subsequent analysis
     fn = os.path.join(output_dir, 'grad_%d_' % was_ae_successful + filenames[0])
     imsave(fn,  x_adv[0,...])  
-    fn = os.path.join(output_dir, 'gradient_samps_' + filenames[0].replace('.png', '.npz'))
+    fn = os.path.join(output_dir, 'gradient_samps_' + filenames[0].replace('.png', '.mat'))
     print(fn) # TEMP
     savemat(fn, {'out' : out})
 
@@ -277,7 +277,7 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
         pred_ri = sess.run(model.output, feed_dict={model.x_tf : x_adv})
         n_successful += np.argmax(pred_ri,axis=1) != y0_scalar
 
-      print('    gamma=%0.2f, k=%d, ri_succ_rate=%0.3f%%' % (gamma, k, 100.*n_successful / k))
+      print('    gamma=%0.2f, epsilon=%0.2f, k=%d, ri_succ_rate=%0.3f%%' % (gamma, epsilon, k, 100.*n_successful / k))
 
   print('[GAAS]: AE success rate: %0.2f%%' % (100.* n_successful / n_images))
 
