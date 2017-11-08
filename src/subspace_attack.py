@@ -238,12 +238,12 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
     delta_x = x_adv - x0
 
     print('[GAAS]: %d successful? %d, ||x||_2 = %0.3f, ||x - x_g||_2 = %0.3f, ||x - x_g||_\inf = %0.3f, delta_loss=%0.3f' % (batch_id, was_ae_successful, norm(x0.flatten(),2), norm(delta_x.flatten(), 2), norm(delta_x.flatten(), np.inf), loss_g - loss0))
+    sys.stdout.flush()
 
     # save results for subsequent analysis
     fn = os.path.join(output_dir, 'grad_%d_' % was_ae_successful + filenames[0])
     imsave(fn,  x_adv[0,...])  
     fn = os.path.join(output_dir, 'gradient_samps_' + filenames[0].replace('.png', '.mat'))
-    print(fn) # TEMP
     savemat(fn, {'out' : out})
 
     n_images += 1
