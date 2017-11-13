@@ -16,7 +16,7 @@ import unittest
 import pdb
 
 import numpy as np
-from numpy.linalg import norm
+from numpy.linalg import norm, matrix_rank
 from scipy.linalg import block_diag as blkdiag
 from scipy.misc import imread, imsave
 from scipy.io import savemat
@@ -90,10 +90,53 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
     #--------------------------------------------------
     feed_dict = {model.x_tf : x0, model.y_tf : y0}
     loss0, g = sess.run([model.loss, model.loss_x], feed_dict=feed_dict)
-    g_normalized = g / norm(g.flatten(),2)
+    l2_norm_g = norm(g.flatten(),2)
 
-    # determine approximately how much the loss must increase before we see a change in prediction.
+    #--------------------------------------------------
+    # see how much the loss changes if we move along g by epsilon
+    #--------------------------------------------------
+    x_step = x0 + epsilon * (g / l2_norm_g)
+    loss_end = sess.run(model.loss, feed_dict={model.x_tf : x_step, model.y_tf : y0})
 
+    # if moving by epsilon fails to increase the loss, this is unexpected
+    if loss_end <= loss0:
+      print('[info]: failed to increase loss; skipping...')
+      continue
+
+    #--------------------------------------------------
+    # Pick some admissible gamma (specific value not super important here) 
+    # and compute the corresponding value of k.
+    #--------------------------------------------------
+    gamma = (loss_end - loss0) / 2.0
+    alpha_inv = epsilon * (l2_norm_g / gamma)  # note the formula in [tra17] is actually for alpha^{-1}
+    k = int(np.floor(alpha_inv ** 2))
+
+    #--------------------------------------------------
+    # check GAAS properties
+    #--------------------------------------------------
+    inner_product_test = np.zeros((k,))
+    delta_loss = np.zeros((k,))
+    delta_loss_test = np.zeros((k,))
+
+    if k >= 1:
+      R = gaas(g, k)
+      if matrix_rank(R) < k:
+        print('[info]: GAAS failed to produce a full-rank matrix!! This should never ever happen!!')
+        continue
+
+      for ii in range(k):
+        r_i = np.reshape(R[:,ii], g.shape)
+        inner_product_test[ii] = np.dot(g.flatten(), r_i.flatten()) > (l2_norm_g / alpha_inv)
+
+        loss_i = sess.run(model.loss, feed_dict={model.x_tf : x0 + r_i, model.y_tf : y0})
+        delta_loss[ii] = (loss_i - (gamma + loss0))
+        delta_loss_test[ii] = delta_loss[ii] > 0
+
+    print('      example %3d:  ||g||/gamma=%2.3f,  k=%d,  #_ip=%d,  #d_loss=%d' % (batch_id, l2_norm_g/gamma, k, np.sum(inner_product_test), np.sum(delta_loss_test)))
+
+    if k > 0 and np.sum(delta_loss_test) < 1:
+      print(delta_loss)
+    
 
 
 
