@@ -139,9 +139,12 @@ class InceptionV3:
                                                             label_smoothing=0.1, 
                                                             weights=0.4) 
 
+
       self.loss = cross_entropy_loss
       self.loss_x = tf.gradients(self.loss, self.x_tf)[0] 
-      #self.loss_xx = tf.hessians(self.loss, tf.reshape(self.x_tf, shape=[-1]))
+
+      #x_flat = tf.reshape(self.x_tf, shape=[-1])
+      #self.loss_xx = tf.hessians(self.loss, x_flat) # not working at the moment - some issue with "none values not supported"
 
     #
     # load weights
