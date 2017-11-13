@@ -146,7 +146,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
     else:
       continue # ignore these examples for now
 
-    print('      example %3d:  ||g||/gamma=%2.3f,  k=%d,  #_ip=%d,  #d_loss=%d' % (batch_id, l2_norm_g/gamma, k, np.sum(inner_product_test), np.sum(delta_loss_test)))
+    print('      example %3d:  delta_loss: %2.3f, ||g||=%2.3f,  k=%d,  #_ip=%d,  #d_loss=%d' % (batch_id, loss_end-loss0, l2_norm_g, k, np.sum(inner_product_test), np.sum(delta_loss_test)))
 
     if k > 0 and np.sum(delta_loss_test) < 1:
       print(delta_loss)
