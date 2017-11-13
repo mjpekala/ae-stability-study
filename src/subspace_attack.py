@@ -111,7 +111,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
 
     # if moving by epsilon fails to increase the loss, this is unexpected
     if loss_end <= loss0:
-      print('[info]: failed to increase loss; skipping...')
+      print('[info]: moving along gradient failed to increase loss; skipping...')
       continue
 
     #--------------------------------------------------
@@ -139,17 +139,22 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
       loss_predicted = loss0 + l2_norm_g * epsilon
       print(loss_end, loss_predicted) # TEMP
 
+      #--------------------------------------------------
       # The notation from the paper is a bit confusing.  The r_i in lemma1 have 
       # unit \ell_2 norm while the r_i in the GAAS construction have \ell_2 norm <= epsilon.
       # To help keep things clear, I will call the vectors from the lemma q_i and the 
       # appropriately rescaled vectors for GAAS r_i.
+      #--------------------------------------------------
       Q = gaas(g, k)
 
       for ii in range(k):
         q_i = np.reshape(Q[:,ii], g.shape)  # lemma 1 in [tra17]
         r_i = q_i * epsilon                 # GAAS perturbation from [tra17]
 
+        #--------------------------------------------------
         # make sure the lemma is satisfied
+        # this should always be true if our GAAS implementation is correct
+        #--------------------------------------------------
         inner_product_test[ii] = np.dot(g.flatten(), q_i.flatten()) > (l2_norm_g / alpha_inv)
 
         #--------------------------------------------------
@@ -166,6 +171,10 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
     else:
       continue # ignore these examples for now
 
+
+    #--------------------------------------------------
+    # summarize performance on this example
+    #--------------------------------------------------
     print('      example %3d:  delta_loss: %2.3f, ||g||=%2.3f,  ratio=%2.3f, k=%d,  #_ip=%d,  #d_loss=%d' % (batch_id, loss_end-loss0, l2_norm_g, l2_norm_g / (loss_end-loss0), k, np.sum(inner_product_test), np.sum(delta_loss_test)))
 
     if k > 0 and np.sum(delta_loss_test) < 1:
