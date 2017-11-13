@@ -1,18 +1,29 @@
 """  Code for working with tensorflow / CNNs.
 """
 
+import os
+
+import numpy as np
+from scipy.misc import imread, imsave
+
+
+import tensorflow as tf
+from tensorflow.contrib.slim.nets import inception, resnet_v2
+slim = tf.contrib.slim
+
+
 
 
 #-------------------------------------------------------------------------------
 # Helper functions for data I/O
 #-------------------------------------------------------------------------------
-def _input_filenames(input_dir):
+def input_filenames(input_dir):
   all_files = tf.gfile.Glob(os.path.join(input_dir, '*.png'))
   all_files.sort()
   return all_files
 
 
-def _load_images(input_dir, batch_shape):
+def load_images(input_dir, batch_shape):
   """Read png images from input directory in batches.
 
   Args:
@@ -30,7 +41,7 @@ def _load_images(input_dir, batch_shape):
   idx = 0
   batch_size = batch_shape[0]
 
-  for filepath in _input_filenames(input_dir):
+  for filepath in input_filenames(input_dir):
     with tf.gfile.Open(filepath, mode='rb') as f:
       image = imread(f, mode='RGB').astype(np.float) / 255.0
 
