@@ -152,14 +152,17 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
         # make sure the lemma is satisfied
         inner_product_test[ii] = np.dot(g.flatten(), q_i.flatten()) > (l2_norm_g / alpha_inv)
 
+        #--------------------------------------------------
         # see whether the loss behaves as expected; ie. moving along the r_i 
         # increases the loss by at least gamma.  This assumes the second-order term
         # is sufficiently small that it can be ignored entirely (which may be untrue
         # if the curvature is sufficiently large?).
+        #--------------------------------------------------
         #
         loss_i = tf_run(sess, model.loss, feed_dict={model.x_tf : x0 + r_i, model.y_tf : y0})
         delta_loss[ii] = (loss_i - (gamma + loss0))
-        delta_loss_test[ii] = delta_loss[ii] > 0
+        slop = 1e-4 # this should really be tied to the Hessian...
+        delta_loss_test[ii] = delta_loss[ii] > -slop
     else:
       continue # ignore these examples for now
 
