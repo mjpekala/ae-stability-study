@@ -127,55 +127,55 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
 
     alpha_inv = epsilon * (l2_norm_g / gamma)  # note the formula in [tra17] is actually for alpha^{-1}
     k = int(np.floor(alpha_inv ** 2))
+    assert(k > 0)
 
     #--------------------------------------------------
-    # check behavior of GAAS and the loss function
+    # Check behavior of GAAS and of the loss function
+    #
+    # Note that, if the assumption of local linearity is incorrect,
+    # the r_i may fail to increase the loss as anticipated.
     #--------------------------------------------------
     inner_product_test = np.zeros((k,))
     delta_loss = np.zeros((k,))
     delta_loss_test = np.zeros((k,))
 
-    if k >= 1:
-      loss_predicted = loss0 + l2_norm_g * epsilon
-      print(loss_end, loss_predicted) # TEMP
+    #--------------------------------------------------
+    # The notation from the paper is a bit confusing.  The r_i in lemma1 have 
+    # unit \ell_2 norm while the r_i in the GAAS construction have \ell_2 norm <= epsilon.
+    # To help keep things clear, I will call the vectors from the lemma q_i and the 
+    # appropriately rescaled vectors for GAAS will be called r_i.
+    #--------------------------------------------------
+    Q = gaas(g, k)
+
+    for ii in range(k):
+      q_i = np.reshape(Q[:,ii], g.shape)  # the r_i in lemma 1 of [tra17]
+      r_i = q_i * epsilon                 # the r_i in GAAS perturbation of [tra17]
 
       #--------------------------------------------------
-      # The notation from the paper is a bit confusing.  The r_i in lemma1 have 
-      # unit \ell_2 norm while the r_i in the GAAS construction have \ell_2 norm <= epsilon.
-      # To help keep things clear, I will call the vectors from the lemma q_i and the 
-      # appropriately rescaled vectors for GAAS r_i.
+      # make sure the lemma is satisfied
+      # this should always be true if our GAAS implementation is correct
       #--------------------------------------------------
-      Q = gaas(g, k)
+      inner_product_test[ii] = np.dot(g.flatten(), q_i.flatten()) > (l2_norm_g / alpha_inv)
 
-      for ii in range(k):
-        q_i = np.reshape(Q[:,ii], g.shape)  # lemma 1 in [tra17]
-        r_i = q_i * epsilon                 # GAAS perturbation from [tra17]
-
-        #--------------------------------------------------
-        # make sure the lemma is satisfied
-        # this should always be true if our GAAS implementation is correct
-        #--------------------------------------------------
-        inner_product_test[ii] = np.dot(g.flatten(), q_i.flatten()) > (l2_norm_g / alpha_inv)
-
-        #--------------------------------------------------
-        # see whether the loss behaves as expected; ie. moving along the r_i 
-        # increases the loss by at least gamma.  This assumes the second-order term
-        # is sufficiently small that it can be ignored entirely (which may be untrue
-        # if the curvature is sufficiently large?).
-        #--------------------------------------------------
-        #
-        loss_i = tf_run(sess, model.loss, feed_dict={model.x_tf : x0 + r_i, model.y_tf : y0})
-        delta_loss[ii] = (loss_i - (gamma + loss0))
-        slop = 1e-4 # this should really be tied to the Hessian...
-        delta_loss_test[ii] = delta_loss[ii] > -slop
-    else:
-      continue # ignore these examples for now
+      #--------------------------------------------------
+      # see whether the loss behaves as expected; ie. moving along the r_i 
+      # increases the loss by at least gamma.  This assumes the second-order term
+      # is sufficiently small that it can be ignored entirely (which may be untrue
+      # if the curvature is sufficiently large?).
+      #--------------------------------------------------
+      #
+      loss_i = tf_run(sess, model.loss, feed_dict={model.x_tf : x0 + r_i, model.y_tf : y0})
+      delta_loss[ii] = (loss_i - (gamma + loss0))
+      slop = 1e-4 # this should really be tied to the Hessian...
+      delta_loss_test[ii] = delta_loss[ii] > -slop
 
 
     #--------------------------------------------------
     # summarize performance on this example
     #--------------------------------------------------
     print('      example %3d:  delta_loss: %2.3f, ||g||=%2.3f,  ratio=%2.3f, k=%d,  #_ip=%d,  #d_loss=%d' % (batch_id, loss_end-loss0, l2_norm_g, l2_norm_g / (loss_end-loss0), k, np.sum(inner_product_test), np.sum(delta_loss_test)))
+    loss_predicted = loss0 + l2_norm_g * epsilon
+    print(loss_end, loss_predicted) # TEMP
 
     if k > 0 and np.sum(delta_loss_test) < 1:
       print(delta_loss)
