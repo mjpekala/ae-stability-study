@@ -47,7 +47,7 @@ def fgsm_attack(sess, model, epsilon, input_dir, output_dir):
 
     # compute the gradient
     feed_dict = {model.x_tf : x0, model.y_tf : y0}
-    grad = sess.run(model.nabla_x_loss, feed_dict=feed_dict)
+    grad = sess.run(model.loss_x, feed_dict=feed_dict)
 
     # construct AE
     x_adv = x0 + epsilon * np.sign(grad)
@@ -66,6 +66,39 @@ def fgsm_attack(sess, model, epsilon, input_dir, output_dir):
   print('[FGSM]: overall AE success rate: %0.2f' % (100.*n_changed/n_total))
 
 
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
+
+
+def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
+  """  Here we check to see if the GAAS subspace construction seems to
+       be working with representative loss functions.
+  """
+  for batch_id, (filenames, x0) in enumerate(nets.load_images(input_dir, model.batch_shape)):
+    n = len(filenames)
+    assert(n==1) # for now, we assume batch size is 1
+
+    #--------------------------------------------------
+    # Use predictions on original example as ground truth.
+    #--------------------------------------------------
+    pred0 = sess.run(model.output, feed_dict={model.x_tf : x0})
+    y0_scalar = np.argmax(pred0, axis=1)
+    y0 = nets.smooth_one_hot_predictions(y0_scalar, model._num_classes)
+
+    #--------------------------------------------------
+    # compute the loss and its gradient
+    #--------------------------------------------------
+    feed_dict = {model.x_tf : x0, model.y_tf : y0}
+    loss0, g = sess.run([model.loss, model.loss_x], feed_dict=feed_dict)
+    g_normalized = g / norm(g.flatten(),2)
+
+    # determine approximately how much the loss must increase before we see a change in prediction.
+
+
+
+
+#-------------------------------------------------------------------------------
+#-------------------------------------------------------------------------------
 
 def _sample_adversarial_direction(model, x0, y0, g, epsilon_max):
   """ Evaluates model loss and predictions at multiple points along 
@@ -114,7 +147,7 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
 
     # also compute the loss and its gradient
     feed_dict = {model.x_tf : x0, model.y_tf : y0}
-    loss0, g = sess.run([model.loss, model.nabla_x_loss], feed_dict=feed_dict)
+    loss0, g = sess.run([model.loss, model.loss_x], feed_dict=feed_dict)
     g_normalized = g / norm(g.flatten(),2)
 
     #--------------------------------------------------
@@ -198,6 +231,7 @@ if __name__ == "__main__":
 
   with tf.Graph().as_default(), tf.Session() as sess:
     model = nets.InceptionV3(sess)
-    gaas_attack(sess, model, epsilon_l2, input_dir, output_dir)    # TODO: this is under construction
+    linearity_test(sess, model, input_dir, output_dir)
+    #gaas_attack(sess, model, epsilon_l2, input_dir, output_dir) 
     #fgsm_attack(sess, model, epsilon_linf, input_dir, output_dir)
 

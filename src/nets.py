@@ -12,6 +12,29 @@ from tensorflow.contrib.slim.nets import inception, resnet_v2
 slim = tf.contrib.slim
 
 
+"""
+Example of explicitly computing the hessian, from:
+     https://groups.google.com/a/tensorflow.org/forum/#!msg/discuss/Xb_lwMIsNPc/sLk7aNcZCQAJ
+
+It is probably better to use tensorflow.hessians() though...
+
+
+def replace_none_with_zero(l):
+  return [0 if i==None else i for i in l] 
+
+tf.reset_default_graph()
+
+x = tf.Variable(1.)
+y = tf.Variable(1.)
+loss = tf.square(x) + tf.square(y)
+sess = create_session()
+grads = tf.gradients([loss], [x, y])
+hess0 = replace_none_with_zero(tf.gradients([grads[0]], [x, y]))
+hess1 = replace_none_with_zero(tf.gradients([grads[1]], [x, y]))
+hessian = tf.pack([tf.pack(hess0), tf.pack(hess1)])
+print hessian.eval()
+"""
+
 
 
 #-------------------------------------------------------------------------------
@@ -79,6 +102,9 @@ def smooth_one_hot_predictions(p, num_classes):
 
 class InceptionV3:
   """ Bare-bones interface to the InceptionV3 model.
+
+  NOTE: we assume a mini-batch size of 1! 
+        This can be changed, but then there may be an issue with the hessian calculation...
   """
 
   def __init__(self, sess):
@@ -114,7 +140,8 @@ class InceptionV3:
                                                             weights=0.4) 
 
       self.loss = cross_entropy_loss
-      self.nabla_x_loss = tf.gradients(self.loss, self.x_tf)[0] 
+      self.loss_x = tf.gradients(self.loss, self.x_tf)[0] 
+      #self.loss_xx = tf.hessians(self.loss, tf.reshape(self.x_tf, shape=[-1]))
 
     #
     # load weights
