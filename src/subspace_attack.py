@@ -74,6 +74,9 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
   """  Here we check to see if the GAAS subspace construction seems to
        be working with representative loss functions.
   """
+
+  overall_result = []
+
   for batch_id, (filenames, x0) in enumerate(nets.load_images(input_dir, model.batch_shape)):
     n = len(filenames)
     assert(n==1) # for now, we assume batch size is 1
@@ -112,30 +115,47 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
     k = int(np.floor(alpha_inv ** 2))
 
     #--------------------------------------------------
-    # check GAAS properties
+    # check behavior of GAAS and the loss function
     #--------------------------------------------------
     inner_product_test = np.zeros((k,))
     delta_loss = np.zeros((k,))
     delta_loss_test = np.zeros((k,))
 
     if k >= 1:
-      R = gaas(g, k)
-      if matrix_rank(R) < k:
-        print('[info]: GAAS failed to produce a full-rank matrix!! This should never ever happen!!')
-        continue
+      # The notation from the paper is a bit confusing.  The r_i in lemma1 have 
+      # unit \ell_2 norm while the r_i in the GAAS construction have \ell_2 norm <= epsilon.
+      # To help keep things clear, I will call the vectors from the lemma q_i and the 
+      # appropriately rescaled vectors for GAAS r_i.
+      Q = gaas(g, k)
 
       for ii in range(k):
-        r_i = np.reshape(R[:,ii], g.shape)
-        inner_product_test[ii] = np.dot(g.flatten(), r_i.flatten()) > (l2_norm_g / alpha_inv)
+        q_i = np.reshape(Q[:,ii], g.shape)  # lemma 1 in [tra17]
+        r_i = q_i * epsilon                 # GAAS perturbation from [tra17]
 
+        # make sure the lemma is satisfied
+        inner_product_test[ii] = np.dot(g.flatten(), q_i.flatten()) > (l2_norm_g / alpha_inv)
+
+        # see whether the loss behaves as expected; ie. moving along the r_i 
+        # increases the loss by at least gamma.  This assumes the second-order term
+        # is sufficiently small that it can be ignored entirely (which may be untrue
+        # if the curvature is sufficiently large?).
+        #
         loss_i = sess.run(model.loss, feed_dict={model.x_tf : x0 + r_i, model.y_tf : y0})
         delta_loss[ii] = (loss_i - (gamma + loss0))
         delta_loss_test[ii] = delta_loss[ii] > 0
+    else:
+      continue # ignore these examples for now
 
     print('      example %3d:  ||g||/gamma=%2.3f,  k=%d,  #_ip=%d,  #d_loss=%d' % (batch_id, l2_norm_g/gamma, k, np.sum(inner_product_test), np.sum(delta_loss_test)))
 
     if k > 0 and np.sum(delta_loss_test) < 1:
       print(delta_loss)
+      overall_result.append(False)
+    else:
+      overall_result.append(True)
+
+  # all done!
+  print('%d (of %d) admissible examples behaved as expected' % (np.sum(overall_result), len(overall_result)))
     
 
 
