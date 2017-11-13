@@ -29,6 +29,14 @@ import nets
 from gaas import gaas
 
 
+SEED = 1099
+
+
+def tf_run(sess, outputs, feed_dict, seed=1099):
+  tf.set_random_seed(SEED)
+  return sess.run(outputs, feed_dict=feed_dict)
+
+
 
 def fgsm_attack(sess, model, epsilon, input_dir, output_dir):
   """ Simple implementation of a fast gradient sign attack.
@@ -84,7 +92,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
     #--------------------------------------------------
     # Use predictions on original example as ground truth.
     #--------------------------------------------------
-    pred0 = sess.run(model.output, feed_dict={model.x_tf : x0})
+    pred0 = tf_run(sess, model.output, feed_dict={model.x_tf : x0})
     y0_scalar = np.argmax(pred0, axis=1)
     y0 = nets.smooth_one_hot_predictions(y0_scalar, model._num_classes)
 
@@ -92,14 +100,14 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
     # compute the loss and its gradient
     #--------------------------------------------------
     feed_dict = {model.x_tf : x0, model.y_tf : y0}
-    loss0, g = sess.run([model.loss, model.loss_x], feed_dict=feed_dict)
+    loss0, g = tf_run(sess, [model.loss, model.loss_x], feed_dict=feed_dict)
     l2_norm_g = norm(g.flatten(),2)
 
     #--------------------------------------------------
     # see how much the loss changes if we move along g by epsilon
     #--------------------------------------------------
     x_step = x0 + epsilon * (g / l2_norm_g)
-    loss_end = sess.run(model.loss, feed_dict={model.x_tf : x_step, model.y_tf : y0})
+    loss_end = tf_run(sess, model.loss, feed_dict={model.x_tf : x_step, model.y_tf : y0})
 
     # if moving by epsilon fails to increase the loss, this is unexpected
     if loss_end <= loss0:
@@ -110,7 +118,13 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
     # Pick some admissible gamma (specific value not super important here) 
     # and compute the corresponding value of k.
     #--------------------------------------------------
-    gamma = (loss_end - loss0) / 2.0
+
+    # Note: lemma 1 requires alpha live in [0,1]!
+    # This limits how large one can make gamma.
+    gamma = loss_end - loss0
+    while gamma / (epsilon * l2_norm_g) > 1.0:
+        gamma /= 2.0
+
     alpha_inv = epsilon * (l2_norm_g / gamma)  # note the formula in [tra17] is actually for alpha^{-1}
     k = int(np.floor(alpha_inv ** 2))
 
@@ -122,6 +136,9 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
     delta_loss_test = np.zeros((k,))
 
     if k >= 1:
+      loss_predicted = loss0 + l2_norm_g * epsilon
+      print(loss_end, loss_predicted) # TEMP
+
       # The notation from the paper is a bit confusing.  The r_i in lemma1 have 
       # unit \ell_2 norm while the r_i in the GAAS construction have \ell_2 norm <= epsilon.
       # To help keep things clear, I will call the vectors from the lemma q_i and the 
@@ -140,7 +157,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=.5):
         # is sufficiently small that it can be ignored entirely (which may be untrue
         # if the curvature is sufficiently large?).
         #
-        loss_i = sess.run(model.loss, feed_dict={model.x_tf : x0 + r_i, model.y_tf : y0})
+        loss_i = tf_run(sess, model.loss, feed_dict={model.x_tf : x0 + r_i, model.y_tf : y0})
         delta_loss[ii] = (loss_i - (gamma + loss0))
         delta_loss_test[ii] = delta_loss[ii] > 0
     else:
