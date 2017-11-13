@@ -35,9 +35,19 @@ def gaas(g, k, sanity_check=True):
   R = np.zeros((d,k))                         # columns of R are the GAAS r_i
   z = np.zeros((d,));  z[:k] = 1/np.sqrt(k);  # this is z from proof of lemma 1 in [tra17]
 
+  #--------------------------------------------------
+  # SPECIAL CASE: if k is 1, just return the trivial result g / ||g||
+  #
+  #--------------------------------------------------
+  #if k == 1:
+  #  R[:,0] = g / norm(g,2)
+  #  return R
+
+
   v_s, beta_s = householder_vec(z)
   v_r, beta_r = householder_vec(g)
 
+  #--------------------------------------------------
   # To calculate the r_i we use:
   #
   #     r_i := Q' e_i
@@ -46,7 +56,7 @@ def gaas(g, k, sanity_check=True):
   #
   # where R = R' from the symmetry of Householder matrices
   # (follows from symmetry of I and vv').
-  #
+  #--------------------------------------------------
   for ii in range(k):
     e_i = np.zeros((d,));  e_i[ii] = 1;
     sei = apply_householder_to_vector(v_s, beta_s, e_i)
@@ -54,7 +64,9 @@ def gaas(g, k, sanity_check=True):
     R[:,ii] = r_i
 
 
+  #--------------------------------------------------
   # (optional) check the solution for correctness
+  #--------------------------------------------------
   if sanity_check:
     # the r_i should be orthonormal
     RtR = np.dot(R.T, R)
