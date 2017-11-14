@@ -145,7 +145,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     delta_loss = np.zeros((k,))
     delta_loss_test = np.zeros((k,))
     y_hat_test = np.zeros((k,), dtype=np.int32)
-    g_norm_test = np.zeros((k,))
+    g_norm_test = np.nan * np.ones((k,))
 
     #--------------------------------------------------
     # The notation from the paper is a bit confusing.  The r_i in lemma1 have 
@@ -158,10 +158,12 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     for ii in range(k):
       q_i = np.reshape(Q[:,ii], g.shape)  # the r_i in lemma 1 of [tra17]
       r_i = q_i * epsilon                 # the r_i in GAAS perturbation of [tra17]
+      x_adv_i = x0 + r_i
 
       #--------------------------------------------------
-      # make sure the lemma is satisfied
-      # this should always be true if our GAAS implementation is correct
+      # Ensure lemma 1 is satisfied.
+      # This should always be true if our GAAS implementation is correct
+      # (does not depend on local behavior of loss function).
       #--------------------------------------------------
       inner_product_test[ii] = np.dot(g.flatten(), q_i.flatten()) > (l2_norm_g / alpha_inv)
 
@@ -170,9 +172,12 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       # increases the loss by at least gamma.  This assumes the second-order term
       # is sufficiently small that it can be ignored entirely (which may be untrue
       # if the curvature is sufficiently large?).
-      #--------------------------------------------------
       #
-      loss_i, pred_i = tf_run(sess, [model.loss, model.output], feed_dict={model.x_tf : x0 + r_i, model.y_tf : y0})
+      # This *does* depend on the loss function and failing this test does not
+      # mean the GAAS code is incorrect...it could be that our assumption of
+      # local linearity is incorrect for this epsilon.
+      #--------------------------------------------------
+      loss_i, pred_i = tf_run(sess, [model.loss, model.output], feed_dict={model.x_tf : x_adv_i, model.y_tf : y0})
       delta_loss[ii] = (loss_i - (gamma + loss0))
       slop = 1e-4 # this should really be tied to the error term in the Taylor series expansion...
       delta_loss_test[ii] = delta_loss[ii] > -slop
@@ -183,18 +188,20 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       # changes in the loss are sufficient to characterize 
       # network predictions (vs. integrity of the code).
       #--------------------------------------------------
-      y_hat_test[ii] = np.argmax(pred_i,axis=1)
+      y_end_scalar = np.argmax(pred_i, axis=1)
+      y_hat_test[ii] = y_end_scalar != y0_scalar
 
       #--------------------------------------------------
       # Check gradient norm hypothesis
       #--------------------------------------------------
-      y_end = nets.smooth_one_hot_predictions(np.argmax(pred_i,axis=1), model._num_classes)
-      feed_dict = {model.x_tf : x0 + r_i, model.y_tf : y_end}
-      g_end = tf_run(sess, model.loss_x, feed_dict=feed_dict)
-      g_norm_test[ii] = norm(g_end.flatten(),2) > l2_norm_g
+      # we only check the gradient if r_i was a successful attack
+      if was_ae_successful and y_hat_test[ii]:
+        y_end = nets.smooth_one_hot_predictions(np.argmax(pred_i,axis=1), model._num_classes)
+        feed_dict = {model.x_tf : x_adv_i, model.y_tf : y_end}
+        g_end = tf_run(sess, model.loss_x, feed_dict=feed_dict)
+        g_norm_test[ii] = norm(g_end.flatten(),2) > l2_norm_g
 
-      if was_ae_successful:
-        print('%2.3f -> %2.3f (%d)' % (l2_norm_g, norm(g_end.flatten(),2), y_hat_test[ii]))
+        print('%2.3f (%d) -> %2.3f (%d)' % (l2_norm_g, y0_scalar, norm(g_end.flatten(),2), y_end_scalar))
 
 
     #--------------------------------------------------
@@ -202,7 +209,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     #--------------------------------------------------
     loss_predicted = loss0 + l2_norm_g * epsilon
     print('   loss along gradient direction, predicted/actual: %2.3f / %2.3f  %s' % (loss_predicted, loss_end, '*' if loss_predicted > loss_end else ''))
-    print('   k / <g,r_i> / \delta_loss / #AE / ||g_adv|| > ||g||:   %d / %d / %d / %d / %d' % (k, np.sum(inner_product_test), np.sum(delta_loss_test), np.sum(y_hat_test != y0_scalar), np.sum(g_norm_test)))
+    print('   k / <g,r_i> / \delta_loss / #AE / ||g_adv|| > ||g||:   %d / %d / %d / %d / %d' % (k, np.sum(inner_product_test), np.sum(delta_loss_test), np.sum(y_hat_test), np.sum(g_norm_test == True)))
     print('')
 
     #--------------------------------------------------
@@ -219,8 +226,8 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     # here we check our gradient norm hypothesis
     # we only care about cases where the gradient attack was successful AND the r_i were too
     if was_ae_successful and np.sum(y_hat_test) > 0:
-      overall_hypothesis[0] += np.sum(g_norm_test)
-      overall_hypothesis[1] += k
+      overall_hypothesis[0] += np.sum(g_norm_test == True)
+      overall_hypothesis[1] += np.sum(np.isfinite(g_norm_test))
 
   # all done!
   print('%d (of %d) admissible examples behaved as expected' % (np.sum(overall_result), len(overall_result)))
