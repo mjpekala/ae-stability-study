@@ -13,6 +13,7 @@ __date__ = "november, 2017"
 
 import sys, os
 import unittest
+import ast
 import pdb
 
 import numpy as np
@@ -30,6 +31,7 @@ from gaas import gaas
 
 
 SEED = 1099
+
 
 
 def tf_run(sess, outputs, feed_dict, seed=1099):
@@ -89,7 +91,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
   for batch_id, (filenames, x0) in enumerate(nets.load_images(input_dir, model.batch_shape)):
     n = len(filenames)
     assert(n==1) # for now, we assume batch size is 1
-    print('EXAMPLE %3d' % batch_id)
+    print('EXAMPLE %3d (%s)' % (batch_id, filenames[0]))
 
     #--------------------------------------------------
     # Use predictions on original example as ground truth.
@@ -113,12 +115,15 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
 
     was_ae_successful = np.argmax(pred_end,axis=1) != y0_scalar
     print('   was \ell_2 gradient-step AE successful? {}'.format(was_ae_successful))
-    print('   loss on clean example: %2.3f' % loss0)
+    print('   loss / ||g|| on clean example:  %2.3f / %2.3f' % (loss0, l2_norm_g))
 
     # if moving by epsilon fails to increase the loss, this is unexpected
     if loss_end <= loss0:
       print('[info]: moving along gradient failed to increase loss; skipping...')
       continue
+
+    loss_predicted = loss0 + l2_norm_g * epsilon
+    print('   loss along gradient direction, predicted/actual: %2.3f / %2.3f  %s' % (loss_predicted, loss_end, '*' if loss_predicted > loss_end else ''))
 
     #--------------------------------------------------
     # Pick some admissible gamma and compute the corresponding value of k.
@@ -134,6 +139,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     alpha_inv = epsilon * (l2_norm_g / gamma)
     k = int(np.floor(alpha_inv ** 2))
     assert(k > 0)
+    k = min(k,1000) # put a limit on k
 
     #--------------------------------------------------
     # Check behavior of GAAS and of the loss function
@@ -188,28 +194,28 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       # changes in the loss are sufficient to characterize 
       # network predictions (vs. integrity of the code).
       #--------------------------------------------------
-      y_end_scalar = np.argmax(pred_i, axis=1)
-      y_hat_test[ii] = y_end_scalar != y0_scalar
+      y_ae_scalar = np.argmax(pred_i, axis=1)
+      y_hat_test[ii] = (y_ae_scalar != y0_scalar)
 
       #--------------------------------------------------
       # Check gradient norm hypothesis
       #--------------------------------------------------
       # we only check the gradient if r_i was a successful attack
       if was_ae_successful and y_hat_test[ii]:
-        y_end = nets.smooth_one_hot_predictions(np.argmax(pred_i,axis=1), model._num_classes)
-        feed_dict = {model.x_tf : x_adv_i, model.y_tf : y_end}
-        g_end = tf_run(sess, model.loss_x, feed_dict=feed_dict)
-        g_norm_test[ii] = norm(g_end.flatten(),2) > l2_norm_g
+        y_ae = nets.smooth_one_hot_predictions(np.argmax(pred_i,axis=1), model._num_classes)
+        feed_dict = {model.x_tf : x_adv_i, model.y_tf : y_ae}
+        loss_ae, g_ae = tf_run(sess, [model.loss, model.loss_x], feed_dict=feed_dict)
+        #g_norm_test[ii] = (norm(g_ae.flatten(),2) / loss_ae) > (l2_norm_g / loss0)  # try normalized gradient
+        g_norm_test[ii] = norm(g_ae.flatten(),2)  > l2_norm_g
 
-        print('%2.3f (%d) -> %2.3f (%d)' % (l2_norm_g, y0_scalar, norm(g_end.flatten(),2), y_end_scalar))
+        print('      [r_%d]:  loss_ae / ||g_ae||:  %2.3f / %2.3f' % (ii, loss_ae, norm(g_ae.flatten(),2)))
+        print('               "%s" -> "%s"' % (CLASS_NAMES[y0_scalar[0]-1], CLASS_NAMES[y_ae_scalar[0]-1]))
 
 
     #--------------------------------------------------
     # summarize performance on this example
     #--------------------------------------------------
-    loss_predicted = loss0 + l2_norm_g * epsilon
-    print('   loss along gradient direction, predicted/actual: %2.3f / %2.3f  %s' % (loss_predicted, loss_end, '*' if loss_predicted > loss_end else ''))
-    print('   k / <g,r_i> / \delta_loss / #AE / ||g_adv|| > ||g||:   %d / %d / %d / %d / %d' % (k, np.sum(inner_product_test), np.sum(delta_loss_test), np.sum(y_hat_test), np.sum(g_norm_test == True)))
+    print('   k / <g,r_i> / d_loss / #AE / ||g_adv|| > ||g||:   %d / %d / %d / %d / %d' % (k, np.sum(inner_product_test), np.sum(delta_loss_test), np.sum(y_hat_test), np.sum(g_norm_test == True)))
     print('')
 
     #--------------------------------------------------
@@ -364,6 +370,10 @@ if __name__ == "__main__":
   epsilon_linf = 0.4
 
   print('[info]: epsilon_l2=%0.3f, epsilon_linf=%0.3f' % (epsilon_l2, epsilon_linf))
+
+  # load imagenet class names
+  with open('./imagenet1000_clsid_to_human.txt', 'r') as f:
+    CLASS_NAMES = ast.literal_eval(f.read())
 
   if not os.path.exists(output_dir):
     os.mkdir(output_dir)
