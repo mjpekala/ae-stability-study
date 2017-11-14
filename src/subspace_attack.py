@@ -84,6 +84,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
   """
 
   overall_result = []
+  overall_hypothesis = [0,0]
 
   for batch_id, (filenames, x0) in enumerate(nets.load_images(input_dir, model.batch_shape)):
     n = len(filenames)
@@ -111,8 +112,8 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     loss_end, pred_end = tf_run(sess, [model.loss, model.output], feed_dict={model.x_tf : x_step, model.y_tf : y0})
 
     was_ae_successful = np.argmax(pred_end,axis=1) != y0_scalar
-    print('   loss on clean example: %2.3f' % loss0)
     print('   was \ell_2 gradient-step AE successful? {}'.format(was_ae_successful))
+    print('   loss on clean example: %2.3f' % loss0)
 
     # if moving by epsilon fails to increase the loss, this is unexpected
     if loss_end <= loss0:
@@ -143,7 +144,8 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     inner_product_test = np.zeros((k,))
     delta_loss = np.zeros((k,))
     delta_loss_test = np.zeros((k,))
-    y_hat_test = np.zeros((k,))
+    y_hat_test = np.zeros((k,), dtype=np.int32)
+    g_norm_test = np.zeros((k,))
 
     #--------------------------------------------------
     # The notation from the paper is a bit confusing.  The r_i in lemma1 have 
@@ -183,24 +185,46 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       #--------------------------------------------------
       y_hat_test[ii] = np.argmax(pred_i,axis=1)
 
+      #--------------------------------------------------
+      # Check gradient norm hypothesis
+      #--------------------------------------------------
+      y_end = nets.smooth_one_hot_predictions(np.argmax(pred_i,axis=1), model._num_classes)
+      feed_dict = {model.x_tf : x0 + r_i, model.y_tf : y_end}
+      g_end = tf_run(sess, model.loss_x, feed_dict=feed_dict)
+      g_norm_test[ii] = norm(g_end.flatten(),2) > l2_norm_g
+
+      if was_ae_successful:
+        print('%2.3f -> %2.3f (%d)' % (l2_norm_g, norm(g_end.flatten(),2), y_hat_test[ii]))
+
 
     #--------------------------------------------------
     # summarize performance on this example
     #--------------------------------------------------
     loss_predicted = loss0 + l2_norm_g * epsilon
-    print('   delta_loss: %2.3f, ||g||=%2.3f,  ratio=%2.3f' % (loss_end-loss0, l2_norm_g, l2_norm_g / (loss_end-loss0)))
     print('   loss along gradient direction, predicted/actual: %2.3f / %2.3f  %s' % (loss_predicted, loss_end, '*' if loss_predicted > loss_end else ''))
-    print('   k=%d,  #_ip=%d,  #d_loss=%d, #AE=%d' % (k, np.sum(inner_product_test), np.sum(delta_loss_test), np.sum(y_hat_test != y0_scalar)))
+    print('   k / <g,r_i> / \delta_loss / #AE / ||g_adv|| > ||g||:   %d / %d / %d / %d / %d' % (k, np.sum(inner_product_test), np.sum(delta_loss_test), np.sum(y_hat_test != y0_scalar), np.sum(g_norm_test)))
     print('')
 
-    if k > 0 and np.sum(delta_loss_test) < 1:
+    #--------------------------------------------------
+    # aggregate results
+    #--------------------------------------------------
+
+    # here we track whether the r_i construction changed the loss as desired
+    if np.sum(delta_loss_test) < 1:
       print(delta_loss)
       overall_result.append(False)
     else:
       overall_result.append(True)
 
+    # here we check our gradient norm hypothesis
+    # we only care about cases where the gradient attack was successful AND the r_i were too
+    if was_ae_successful and np.sum(y_hat_test) > 0:
+      overall_hypothesis[0] += np.sum(g_norm_test)
+      overall_hypothesis[1] += k
+
   # all done!
   print('%d (of %d) admissible examples behaved as expected' % (np.sum(overall_result), len(overall_result)))
+  print('%d (of %d) successful r_i resulted in larger gradient norms' % (overall_hypothesis[0], overall_hypothesis[1]))
     
 
 
