@@ -143,7 +143,8 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     #
     gamma = loss_end - loss0
     while gamma / (epsilon * l2_norm_g) > 1.0:
-        gamma /= 2.0
+        print('   warning: reducing gamma to satisify alpha \in [0,1]')
+        gamma *= 0.9
 
     alpha_inv = epsilon * (l2_norm_g / gamma)
     k = int(np.floor(alpha_inv ** 2))
@@ -209,17 +210,18 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       y_hat_test[ii] = (y_ae_scalar != y0_scalar)
 
       #--------------------------------------------------
-      # Check gradient norm hypothesis
+      # Check gradient norm hypothesis (if r_i was successful attack)
       #--------------------------------------------------
-      # note: only check the gradient if r_i was a successful attack
       if was_ae_successful and y_hat_test[ii]:
+        # note: now, y is the label associated with the AE 
+        #       (vs the original label)
+        #
         y_ae = nets.smooth_one_hot_predictions(np.argmax(pred_i,axis=1), model._num_classes)
         feed_dict = {model.x_tf : x_adv_i, model.y_tf : y_ae}
         loss_ae, g_ae = tf_run(sess, [model.loss, model.loss_x], feed_dict=feed_dict)
-        #g_norm_test[ii] = (norm(g_ae.flatten(),2) / loss_ae) > (l2_norm_g / loss0)  # try normalized gradient
         g_norm_test[ii] = norm(g_ae.flatten(),2)  > l2_norm_g
 
-        print('      [r_%d]:  loss_ae / ||g_ae||:  %2.3f / %2.3f' % (ii, loss_ae, norm(g_ae.flatten(),2)))
+        print('      [r_%d]:  loss_ae / ||g_ae||:  %2.5f / %2.3f' % (ii, loss_ae, norm(g_ae.flatten(),2)))
         print('               "%s" -> "%s"' % (CLASS_NAMES[y0_scalar[0]-1], CLASS_NAMES[y_ae_scalar[0]-1]))
 
 
