@@ -29,9 +29,9 @@ def gaas(g, k, sanity_check=True):
      R : a dxk matrix of k orthogonal vectors satisfying the GAAS conditions
 
   """
-  tol = 1e-4  #   update: had to change from 1e-5 after trying to upgrade tensorflow, strange...
-  g = g.flatten() 
+  tol = 1e-5                                  # our tolerance for error
 
+  g = g.flatten().astype(np.float64)          # TF gives float32 and we want more precision here...
   d = g.size
   R = np.zeros((d,k))                         # columns of R are the GAAS r_i
   z = np.zeros((d,));  z[:k] = 1/np.sqrt(k);  # this is z from proof of lemma 1 in [tra17]
