@@ -1,4 +1,7 @@
 """  Code for working with tensorflow / CNNs.
+
+  Originally developed using tensorflow 1.2.1.
+  Newer versions of TF require upgrading our CUDA?
 """
 
 import os
