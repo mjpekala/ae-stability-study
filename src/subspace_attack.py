@@ -35,8 +35,14 @@ SEED = 1099
 
 
 def tf_run(sess, outputs, feed_dict, seed=1099):
+  """Wrapper around TF session that sets the seed each time.
+
+  This does not seem to remove the non-determinism I'm seeing so
+  further investigation is required...
+  """
   tf.set_random_seed(SEED)
   return sess.run(outputs, feed_dict=feed_dict)
+
 
 
 
@@ -81,8 +87,8 @@ def fgsm_attack(sess, model, epsilon, input_dir, output_dir):
 
 
 def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
-  """  Here we check to see if the GAAS subspace construction seems to
-       be working with representative loss functions.
+  """ Here we check to see if the GAAS subspace construction seems to
+      be working with representative loss functions.
   """
 
   overall_result = []
@@ -90,7 +96,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
 
   for batch_id, (filenames, x0) in enumerate(nets.load_images(input_dir, model.batch_shape)):
     n = len(filenames)
-    assert(n==1) # for now, we assume batch size is 1
+    assert(n==1) # for now, we assume batch size is 1; correctness >> speed here
     print('EXAMPLE %3d (%s)' % (batch_id, filenames[0]))
 
     #--------------------------------------------------
@@ -108,7 +114,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     l2_norm_g = norm(g.flatten(),2)
 
     #--------------------------------------------------
-    # see how much the loss changes if we move along g by epsilon
+    # determine how much the loss changes if we move along g by epsilon
     #--------------------------------------------------
     x_step = x0 + epsilon * (g / l2_norm_g)
     loss_end, pred_end = tf_run(sess, [model.loss, model.output], feed_dict={model.x_tf : x_step, model.y_tf : y0})
@@ -118,6 +124,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     print('   loss / ||g|| on clean example:  %2.3f / %2.3f' % (loss0, l2_norm_g))
 
     # if moving by epsilon fails to increase the loss, this is unexpected
+    # (entirely possible if epsilon is too large)
     if loss_end <= loss0:
       print('[info]: moving along gradient failed to increase loss; skipping...')
       continue
@@ -131,7 +138,9 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
 
     # Note: lemma 1 requires alpha live in [0,1]!
     # This limits how large one can make gamma.
-    # Note the formula in [tra17] is actually for alpha^{-1}
+    # Note the formula in [tra17] is actually for alpha^{-1} 
+    # (slight typo in paper)
+    #
     gamma = loss_end - loss0
     while gamma / (epsilon * l2_norm_g) > 1.0:
         gamma /= 2.0
@@ -154,10 +163,12 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     g_norm_test = np.nan * np.ones((k,))
 
     #--------------------------------------------------
-    # The notation from the paper is a bit confusing.  The r_i in lemma1 have 
-    # unit \ell_2 norm while the r_i in the GAAS construction have \ell_2 norm <= epsilon.
-    # To help keep things clear, I will call the vectors from the lemma q_i and the 
-    # appropriately rescaled vectors for GAAS will be called r_i.
+    # The notation from the paper can be a bit confusing.  
+    # The r_i in lemma1 have unit \ell_2 norm while the r_i in 
+    # the GAAS construction have \ell_2 norm <= epsilon.
+    #
+    # To help keep things clear, I will call the vectors from the lemma "q_i" 
+    # and the appropriately rescaled vectors for GAAS will be called "r_i".
     #--------------------------------------------------
     Q = gaas(g, k)
 
@@ -200,7 +211,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       #--------------------------------------------------
       # Check gradient norm hypothesis
       #--------------------------------------------------
-      # we only check the gradient if r_i was a successful attack
+      # note: only check the gradient if r_i was a successful attack
       if was_ae_successful and y_hat_test[ii]:
         y_ae = nets.smooth_one_hot_predictions(np.argmax(pred_i,axis=1), model._num_classes)
         feed_dict = {model.x_tf : x_adv_i, model.y_tf : y_ae}
