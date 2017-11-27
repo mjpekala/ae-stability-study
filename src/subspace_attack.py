@@ -143,8 +143,9 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     #
     gamma = loss_end - loss0
     while gamma / (epsilon * l2_norm_g) > 1.0:
-        print('   warning: reducing gamma to satisify alpha \in [0,1]')
         gamma *= 0.9
+    if gamma < (loss_end - loss0):
+      print('   warning: reduced gamma from %2.5f to %2.5f to satisify alpha \in [0,1]' % ((loss_end-loss0), gamma))
 
     alpha_inv = epsilon * (l2_norm_g / gamma)
     k = int(np.floor(alpha_inv ** 2))
