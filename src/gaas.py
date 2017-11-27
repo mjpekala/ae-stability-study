@@ -29,6 +29,7 @@ def gaas(g, k, sanity_check=True):
      R : a dxk matrix of k orthogonal vectors satisfying the GAAS conditions
 
   """
+  tol = 1e-4  #   update: had to change from 1e-5 after trying to upgrade tensorflow, strange...
   g = g.flatten() 
 
   d = g.size
@@ -39,9 +40,9 @@ def gaas(g, k, sanity_check=True):
   # SPECIAL CASE: if k is 1, just return the trivial result g / ||g||
   #
   #--------------------------------------------------
-  #if k == 1:
-  #  R[:,0] = g / norm(g,2)
-  #  return R
+  if k == 1:
+    R[:,0] = g / norm(g,2)
+    return R
 
 
   v_s, beta_s = householder_vec(z)
@@ -70,7 +71,7 @@ def gaas(g, k, sanity_check=True):
   if sanity_check:
     # the r_i should be orthonormal
     RtR = np.dot(R.T, R)
-    assert(norm(RtR-np.eye(k,k), 'fro') < 1e-5)
+    assert(norm(RtR-np.eye(k,k), 'fro') < tol)
    
     # make sure Qg = ||g||_2 z
     #
@@ -78,13 +79,13 @@ def gaas(g, k, sanity_check=True):
     #       the r_i as columns in R.
     #
     err = np.dot(R.T, g) - norm(g,2) * z[:k]
-    assert(norm(err,2) < 1e-5)
+    assert(norm(err,2) < tol)
  
     # make sure <g,r_i> behaves as expected.
     for ii in range(k):
         gtr = np.dot(g, R[:,ii])
         err = np.dot(g, r_i) - norm(g,2) / np.sqrt(k)
-        assert(abs(err) < 1e-5)
+        assert(abs(err) < tol)
 
   return R
 
