@@ -1,7 +1,9 @@
 """  Code for working with tensorflow / CNNs.
 
   Originally developed using tensorflow 1.2.1.
-  Newer versions of TF require upgrading our CUDA?
+  Updated to 1.3.1 via
+     conda install -c anaconda tensorflow-gpu
+
 """
 
 import os
