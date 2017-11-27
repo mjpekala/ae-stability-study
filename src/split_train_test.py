@@ -1,4 +1,5 @@
-"""  Splits the 1000 training images into a 'train' and 'test' pools.
+"""  Splits the 1000 training images from the Imagenet-like
+     NIPS/Kaggle/Google Brain competition into a 'train' and 'test' pools.
 """
 
 import sys, os
