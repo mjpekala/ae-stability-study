@@ -22,6 +22,8 @@ from scipy.linalg import block_diag as blkdiag
 from scipy.misc import imread, imsave
 from scipy.io import savemat
 
+import pandas as pd
+
 import tensorflow as tf
 from tensorflow.contrib.slim.nets import inception, resnet_v2
 slim = tf.contrib.slim
@@ -120,8 +122,12 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     loss_end, pred_end = tf_run(sess, [model.loss, model.output], feed_dict={model.x_tf : x_step, model.y_tf : y0})
 
     was_ae_successful = np.argmax(pred_end,axis=1) != y0_scalar
-    print('   was \ell_2 gradient-step AE successful? {}'.format(was_ae_successful))
     print('   loss / ||g|| on clean example:  %2.3f / %2.3f' % (loss0, l2_norm_g))
+    print('   was \ell_2 gradient-step AE successful? {}'.format(was_ae_successful))
+
+    # for now, we ignore cases where the original attack was unsuccessful
+    if not was_ae_successful:
+      continue
 
     # if moving by epsilon fails to increase the loss, this is unexpected
     # (entirely possible if epsilon is too large)
@@ -136,84 +142,90 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     # Pick some admissible gamma and compute the corresponding value of k.
     #--------------------------------------------------
 
-    # Note: lemma 1 requires alpha live in [0,1]!
-    # This limits how large one can make gamma.
-    # Note the formula in [tra17] is actually for alpha^{-1} 
-    # (slight typo in paper)
+    # Note: Lemma 1 requires alpha live in [0,1]!
+    #       This limits how large one can make gamma.
+    # Note: the formula in [tra17] is actually for alpha^{-1} 
+    #       (slight typo in paper)
     #
-    gamma = loss_end - loss0
-    while gamma / (epsilon * l2_norm_g) > 1.0:
-        gamma *= 0.9
-    if gamma < (loss_end - loss0):
-      print('   warning: reduced gamma from %2.5f to %2.5f to satisify alpha \in [0,1]' % ((loss_end-loss0), gamma))
+    alpha_vals = np.linspace(.1, 1, 10)
+    results = []
 
-    alpha_inv = epsilon * (l2_norm_g / gamma)
-    k = int(np.floor(alpha_inv ** 2))
-    assert(k > 0)
-    k = min(k,1000) # put a limit on k
+    for alpha in alpha_vals:
+      gamma = epsilon * l2_norm_g * alpha
 
-    #--------------------------------------------------
-    # Check behavior of GAAS and of the loss function
-    #
-    # Note that, if the assumption of local linearity is incorrect,
-    # the r_i may fail to increase the loss as anticipated.
-    #--------------------------------------------------
-    inner_product_test = np.zeros((k,))
-    delta_loss = np.zeros((k,))
-    delta_loss_test = np.zeros((k,))
-    y_hat_test = np.zeros((k,), dtype=np.int32)
-    g_norm_test = np.nan * np.ones((k,))
+      gamma_ideal = loss_end - loss0
+      if gamma < gamma_ideal:
+        print('   warning: gamma value %2.4f for alpha %2.3f is less than gamma_ideal=%2.4f' % (gamma, alpha, gamma_ideal))
 
-    #--------------------------------------------------
-    # The notation from the paper can be a bit confusing.  
-    # The r_i in lemma1 have unit \ell_2 norm while the r_i in 
-    # the GAAS construction have \ell_2 norm <= epsilon.
-    #
-    # To help keep things clear, I will call the vectors from the lemma "q_i" 
-    # and the appropriately rescaled vectors for GAAS will be called "r_i".
-    #--------------------------------------------------
-    Q = gaas(g, k)
-
-    for ii in range(k):
-      q_i = np.reshape(Q[:,ii], g.shape)  # the r_i in lemma 1 of [tra17]
-      r_i = q_i * epsilon                 # the r_i in GAAS perturbation of [tra17]
-      x_adv_i = x0 + r_i
+      alpha_inv = epsilon * (l2_norm_g / gamma)
+      k = int(np.floor(alpha_inv ** 2))
+      assert(k > 0)
+      k = min(k,1000) # put a limit on k
 
       #--------------------------------------------------
-      # Ensure lemma 1 is satisfied.
-      # This should always be true if our GAAS implementation is correct
-      # (does not depend on local behavior of loss function).
-      #--------------------------------------------------
-      inner_product_test[ii] = np.dot(g.flatten(), q_i.flatten()) > (l2_norm_g / alpha_inv)
-
-      #--------------------------------------------------
-      # see whether the loss behaves as expected; ie. moving along the r_i 
-      # increases the loss by at least gamma.  This assumes the second-order term
-      # is sufficiently small that it can be ignored entirely (which may be untrue
-      # if the curvature is sufficiently large?).
+      # Check behavior of GAAS and of the loss function
       #
-      # This *does* depend on the loss function and failing this test does not
-      # mean the GAAS code is incorrect...it could be that our assumption of
-      # local linearity is incorrect for this epsilon.
+      # Note that, if the assumption of local linearity is incorrect,
+      # the r_i may fail to increase the loss as anticipated.
       #--------------------------------------------------
-      loss_i, pred_i = tf_run(sess, [model.loss, model.output], feed_dict={model.x_tf : x_adv_i, model.y_tf : y0})
-      delta_loss[ii] = (loss_i - (gamma + loss0))
-      slop = 1e-4 # this should really be tied to the error term in the Taylor series expansion...
-      delta_loss_test[ii] = delta_loss[ii] > -slop
+      inner_product_test = np.zeros((k,))
+      delta_loss = np.zeros((k,))
+      delta_loss_test = np.zeros((k,))
+      y_hat_test = np.zeros((k,), dtype=np.int32)
+      g_norm_test = np.nan * np.ones((k,))
 
       #--------------------------------------------------
-      # Check whether r_i was a successful AE.
-      # In some sense, this is more a test of the hypothesis that
-      # changes in the loss are sufficient to characterize 
-      # network predictions (vs. integrity of the code).
+      # The notation from the paper can be a bit confusing.  
+      # The r_i in lemma1 have unit \ell_2 norm while the r_i in 
+      # the GAAS construction have \ell_2 norm <= epsilon.
+      #
+      # To help keep things clear, I will call the vectors from the lemma "q_i" 
+      # and the appropriately rescaled vectors for GAAS will be called "r_i".
       #--------------------------------------------------
-      y_ae_scalar = np.argmax(pred_i, axis=1)
-      y_hat_test[ii] = (y_ae_scalar != y0_scalar)
+      Q = gaas(g, k)
 
-      #--------------------------------------------------
-      # Check gradient norm hypothesis (if r_i was successful attack)
-      #--------------------------------------------------
-      if was_ae_successful and y_hat_test[ii]:
+      for ii in range(k):
+        q_i = np.reshape(Q[:,ii], g.shape)  # the r_i in lemma 1 of [tra17]
+        r_i = q_i * epsilon                 # the r_i in GAAS perturbation of [tra17]
+        x_adv_i = x0 + r_i
+
+        #--------------------------------------------------
+        # Ensure lemma 1 is satisfied.
+        # This should always be true if our GAAS implementation is correct
+        # (does not depend on local behavior of loss function).
+        #--------------------------------------------------
+        inner_product_test[ii] = (np.dot(g.flatten(), q_i.flatten()) + 1e-4) > (l2_norm_g / alpha_inv)
+        if not inner_product_test[ii]:
+          pdb.set_trace() # TEMP
+
+        #--------------------------------------------------
+        # see whether the loss behaves as expected; ie. moving along the r_i 
+        # increases the loss by at least gamma.  This assumes the second-order term
+        # is sufficiently small that it can be ignored entirely (which may be untrue
+        # if the curvature is sufficiently large?).
+        #
+        # This *does* depend on the loss function and failing this test does not
+        # mean the GAAS code is incorrect...it could be that our assumption of
+        # local linearity is incorrect for this epsilon.
+        #--------------------------------------------------
+        loss_i, pred_i = tf_run(sess, [model.loss, model.output], feed_dict={model.x_tf : x_adv_i, model.y_tf : y0})
+        delta_loss[ii] = (loss_i - (gamma + loss0))
+        slop = 1e-6 # this should really be tied to the error term in the Taylor series expansion...
+        delta_loss_test[ii] = (delta_loss[ii] + slop) > 0.0
+
+        #--------------------------------------------------
+        # Check whether r_i was a successful AE.
+        # In some sense, this is more a test of the hypothesis that
+        # changes in the loss are sufficient to characterize 
+        # network predictions (vs. integrity of the code).
+        #--------------------------------------------------
+        y_ae_scalar = np.argmax(pred_i, axis=1)
+        y_hat_test[ii] = (y_ae_scalar != y0_scalar)
+
+        #--------------------------------------------------
+        # Check gradient norm hypothesis.
+        # This is most meaningful if r_i was successful attack...
+        #--------------------------------------------------
         # note: now, y is the label associated with the AE 
         #       (vs the original label)
         #
@@ -221,16 +233,24 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
         feed_dict = {model.x_tf : x_adv_i, model.y_tf : y_ae}
         loss_ae, g_ae = tf_run(sess, [model.loss, model.loss_x], feed_dict=feed_dict)
         g_norm_test[ii] = norm(g_ae.flatten(),2)  > l2_norm_g
+        #if was_ae_successful and y_hat_test[ii]:
+          #print('      [r_%d]:  loss_ae / ||g_ae||:  %2.5f / %2.3f' % (ii, loss_ae, norm(g_ae.flatten(),2)))
+          #print('               "%s" -> "%s"' % (CLASS_NAMES[y0_scalar[0]-1], CLASS_NAMES[y_ae_scalar[0]-1]))
 
-        print('      [r_%d]:  loss_ae / ||g_ae||:  %2.5f / %2.3f' % (ii, loss_ae, norm(g_ae.flatten(),2)))
-        print('               "%s" -> "%s"' % (CLASS_NAMES[y0_scalar[0]-1], CLASS_NAMES[y_ae_scalar[0]-1]))
+      #--------------------------------------------------
+      # record performance on this example
+      #--------------------------------------------------
+      results.append((alpha, 
+                      gamma, 
+                      k, 
+                      np.mean(delta_loss), 
+                      np.max(delta_loss), 
+                      np.sum(y_hat_test), 
+                      np.sum(g_norm_test == True)))
 
 
-    #--------------------------------------------------
-    # summarize performance on this example
-    #--------------------------------------------------
-    print('   k / <g,r_i> / d_loss / #AE / ||g_adv|| > ||g||:   %d / %d / %d / %d / %d' % (k, np.sum(inner_product_test), np.sum(delta_loss_test), np.sum(y_hat_test), np.sum(g_norm_test == True)))
-    print('')
+    df = pd.DataFrame(np.array(results), columns=('alpha', 'gamma', 'k', 'mean d_loss', 'max d_loss', '#AE', '||g_a||>||g||'))
+    print('\n'); print(df); print('\n')
 
     #--------------------------------------------------
     # aggregate results
@@ -376,6 +396,7 @@ def gaas_attack(sess, model, epsilon_frac, input_dir, output_dir):
 
 if __name__ == "__main__":
   np.set_printoptions(precision=4, suppress=True)  # make output easier to read
+  pd.set_option('display.width', 120)
 
   # otherwise, attack some data
   input_dir = sys.argv[1]
@@ -395,6 +416,4 @@ if __name__ == "__main__":
   with tf.Graph().as_default(), tf.Session() as sess:
     model = nets.InceptionV3(sess)
     linearity_test(sess, model, input_dir, output_dir)
-    #gaas_attack(sess, model, epsilon_l2, input_dir, output_dir) 
-    #fgsm_attack(sess, model, epsilon_linf, input_dir, output_dir)
 
