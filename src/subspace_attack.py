@@ -113,6 +113,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     #--------------------------------------------------
     feed_dict = {model.x_tf : x0, model.y_tf : y0}
     loss0, g = tf_run(sess, [model.loss, model.loss_x], feed_dict=feed_dict)
+    g = g.astype(np.float64)  # UPDATE: mjp for more precision
     l2_norm_g = norm(g.flatten(),2)
 
     #--------------------------------------------------
@@ -232,7 +233,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
         y_ae = nets.smooth_one_hot_predictions(np.argmax(pred_i,axis=1), model._num_classes)
         feed_dict = {model.x_tf : x_adv_i, model.y_tf : y_ae}
         loss_ae, g_ae = tf_run(sess, [model.loss, model.loss_x], feed_dict=feed_dict)
-        g_norm_test[ii] = norm(g_ae.flatten(),2)  > l2_norm_g
+        g_norm_test[ii] = norm(g_ae.flatten(),2)  - l2_norm_g
         #if was_ae_successful and y_hat_test[ii]:
           #print('      [r_%d]:  loss_ae / ||g_ae||:  %2.5f / %2.3f' % (ii, loss_ae, norm(g_ae.flatten(),2)))
           #print('               "%s" -> "%s"' % (CLASS_NAMES[y0_scalar[0]-1], CLASS_NAMES[y_ae_scalar[0]-1]))
@@ -242,14 +243,15 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       #--------------------------------------------------
       results.append((alpha, 
                       gamma, 
+                      gamma_ideal,
                       k, 
                       np.mean(delta_loss), 
                       np.max(delta_loss), 
                       np.sum(y_hat_test), 
-                      np.sum(g_norm_test == True)))
+                      np.sum(g_norm_test > 0),
+                      np.mean(g_norm_test)));
 
-
-    df = pd.DataFrame(np.array(results), columns=('alpha', 'gamma', 'k', 'mean d_loss', 'max d_loss', '#AE', '||g_a||>||g||'))
+    df = pd.DataFrame(np.array(results), columns=('alpha', 'gamma', 'gamma_ideal', 'k', 'mean d_loss', 'max d_loss', '#AE', '||g_a||>||g||', 'mean(||g_a|| - ||g||)'))
     print('\n'); print(df); print('\n')
 
     #--------------------------------------------------
@@ -265,13 +267,13 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
 
     # here we check our gradient norm hypothesis
     # we only care about cases where the gradient attack was successful AND the r_i were too
-    if was_ae_successful and np.sum(y_hat_test) > 0:
-      overall_hypothesis[0] += np.sum(g_norm_test == True)
-      overall_hypothesis[1] += np.sum(np.isfinite(g_norm_test))
+    #if was_ae_successful and np.sum(y_hat_test) > 0:
+    #  overall_hypothesis[0] += np.sum(g_norm_test > 0)
+    #  overall_hypothesis[1] += np.sum(np.isfinite(g_norm_test))
 
   # all done!
   print('%d (of %d) admissible examples behaved as expected' % (np.sum(overall_result), len(overall_result)))
-  print('%d (of %d) successful r_i resulted in larger gradient norms' % (overall_hypothesis[0], overall_hypothesis[1]))
+  #print('%d (of %d) successful r_i resulted in larger gradient norms' % (overall_hypothesis[0], overall_hypothesis[1]))
     
 
 
