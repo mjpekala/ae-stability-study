@@ -42,7 +42,7 @@ def tf_run(sess, outputs, feed_dict, seed=1099):
   This does not seem to remove the non-determinism I'm seeing so
   further investigation is required...
   """
-  tf.set_random_seed(SEED)
+  tf.set_random_seed(SEED)  # This does not seem to work...
   return sess.run(outputs, feed_dict=feed_dict)
 
 
@@ -88,7 +88,26 @@ def fgsm_attack(sess, model, epsilon, input_dir, output_dir):
 #-------------------------------------------------------------------------------
 
 
-def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
+def _find_minimum_epsilon(sess, model, x, y):
+  """ Computes (approximately) the minimum ell_2 perturbation needed to change
+  the label of x when moving along the gradient direction. """
+  grad = tf_run(sess, model.loss_x, feed_dict={model.x_tf : x, model.y_tf : y})
+  grad = grad.astype(np.float64) 
+
+  l2_norm_g = norm(grad.flatten(), 2)
+  ae_direction = grad / l2_norm_g
+
+  epsilon = .5
+  while True:
+    x_step = x + epsilon * ae_direction
+    pred_end = tf_run(sess, model.output, feed_dict={model.x_tf : x_step, model.y_tf : y})
+    if np.argmax(pred_end) != np.argmax(y):
+      return epsilon
+    epsilon = epsilon * 1.1
+
+
+
+def linearity_test(sess, model, input_dir, output_dir):
   """ Here we check to see if the GAAS subspace construction seems to
       be working with representative loss functions.
   """
@@ -99,7 +118,6 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
   for batch_id, (filenames, x0) in enumerate(nets.load_images(input_dir, model.batch_shape)):
     n = len(filenames)
     assert(n==1) # for now, we assume batch size is 1; correctness >> speed here
-    print('EXAMPLE %3d (%s)' % (batch_id, filenames[0]))
 
     #--------------------------------------------------
     # Use predictions on original example as ground truth.
@@ -109,21 +127,27 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     y0 = nets.smooth_one_hot_predictions(y0_scalar, model._num_classes)
 
     #--------------------------------------------------
+    # choose an epsilon
+    #--------------------------------------------------
+    epsilon = _find_minimum_epsilon(sess, model, x0, y0)
+    print('\nEXAMPLE %3d (%s); epsilon = %0.3f' % (batch_id, filenames[0], epsilon))
+
+    #--------------------------------------------------
     # compute the loss and its gradient
     #--------------------------------------------------
-    feed_dict = {model.x_tf : x0, model.y_tf : y0}
-    loss0, g = tf_run(sess, [model.loss, model.loss_x], feed_dict=feed_dict)
-    g = g.astype(np.float64)  # UPDATE: mjp for more precision
-    l2_norm_g = norm(g.flatten(),2)
+    loss0, grad = tf_run(sess, [model.loss, model.loss_x], feed_dict={model.x_tf : x0, model.y_tf : y0})
+    grad = grad.astype(np.float64)  # float32 -> float64
+    l2_norm_g = norm(grad.flatten(),2)
 
     #--------------------------------------------------
-    # determine how much the loss changes if we move along g by epsilon
+    # determine how much the loss changes if we move along grad by epsilon
     #--------------------------------------------------
-    x_step = x0 + epsilon * (g / l2_norm_g)
+    x_step = x0 + epsilon * (grad / l2_norm_g)
     loss_end, pred_end = tf_run(sess, [model.loss, model.output], feed_dict={model.x_tf : x_step, model.y_tf : y0})
 
-    was_ae_successful = np.argmax(pred_end,axis=1) != y0_scalar
-    print('   loss / ||g|| on clean example:  %2.3f / %2.3f' % (loss0, l2_norm_g))
+    was_ae_successful = (np.argmax(pred_end,axis=1) != y0_scalar)
+    print('   loss / ||g|| on x0:  %2.3f / %2.3f' % (loss0, l2_norm_g))
+    print('   loss on AE:          %2.3f ' % (loss_end))
     print('   was \ell_2 gradient-step AE successful? {}'.format(was_ae_successful))
 
     # for now, we ignore cases where the original attack was unsuccessful
@@ -131,7 +155,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       continue
 
     # if moving by epsilon fails to increase the loss, this is unexpected
-    # (entirely possible if epsilon is too large)
+    # (possible, especially if epsilon is very large)
     if loss_end <= loss0:
       print('[info]: moving along gradient failed to increase loss; skipping...')
       continue
@@ -146,22 +170,26 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
     # Note: Lemma 1 requires alpha live in [0,1]!
     #       This limits how large one can make gamma.
     # Note: the formula in [tra17] is actually for alpha^{-1} 
-    #       (slight typo in paper)
+    #       (there is a slight typo in paper):
     #
-    alpha_vals = np.linspace(.1, 1, 10)
     results = []
+    alpha_vals = np.linspace(.1, 1, 10)            # trying a range of admissible gamma
+    gamma_vals = epsilon * l2_norm_g * alpha_vals
 
-    for alpha in alpha_vals:
-      gamma = epsilon * l2_norm_g * alpha
+    # if the "ideal" gamma (associated with movement along g) is feasible
+    # then add it to the list of gamma values to try.
+    gamma_ideal = loss_end - loss0
+    alpha_ideal = gamma_ideal / (epsilon * l2_norm_g)
+    if alpha_ideal <= 1:
+      gamma_vals = np.concatenate((gamma_vals, np.array([gamma_ideal,])))
+      gamma_vals.sort()
 
-      gamma_ideal = loss_end - loss0
-      if gamma < gamma_ideal:
-        print('   warning: gamma value %2.4f for alpha %2.3f is less than gamma_ideal=%2.4f' % (gamma, alpha, gamma_ideal))
-
+    for gamma in gamma_vals:
       alpha_inv = epsilon * (l2_norm_g / gamma)
+
       k = int(np.floor(alpha_inv ** 2))
-      assert(k > 0)
-      k = min(k,1000) # put a limit on k
+      k = max(k,1)
+      k = min(k,300) # put a limit on k
 
       #--------------------------------------------------
       # Check behavior of GAAS and of the loss function
@@ -170,6 +198,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       # the r_i may fail to increase the loss as anticipated.
       #--------------------------------------------------
       inner_product_test = np.zeros((k,))
+      losses = np.zeros((k,))
       delta_loss = np.zeros((k,))
       delta_loss_test = np.zeros((k,))
       y_hat_test = np.zeros((k,), dtype=np.int32)
@@ -183,11 +212,11 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       # To help keep things clear, I will call the vectors from the lemma "q_i" 
       # and the appropriately rescaled vectors for GAAS will be called "r_i".
       #--------------------------------------------------
-      Q = gaas(g, k)
+      Q = gaas(grad, k)
 
       for ii in range(k):
-        q_i = np.reshape(Q[:,ii], g.shape)  # the r_i in lemma 1 of [tra17]
-        r_i = q_i * epsilon                 # the r_i in GAAS perturbation of [tra17]
+        q_i = np.reshape(Q[:,ii], grad.shape)  # the r_i in lemma 1 of [tra17]
+        r_i = q_i * epsilon                    # the r_i in GAAS perturbation of [tra17]
         x_adv_i = x0 + r_i
 
         #--------------------------------------------------
@@ -195,9 +224,8 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
         # This should always be true if our GAAS implementation is correct
         # (does not depend on local behavior of loss function).
         #--------------------------------------------------
-        inner_product_test[ii] = (np.dot(g.flatten(), q_i.flatten()) + 1e-4) > (l2_norm_g / alpha_inv)
-        if not inner_product_test[ii]:
-          pdb.set_trace() # TEMP
+        inner_product_test[ii] = (np.dot(grad.flatten(), q_i.flatten()) + 1e-4) > (l2_norm_g / alpha_inv)
+        assert(inner_product_test[ii])
 
         #--------------------------------------------------
         # see whether the loss behaves as expected; ie. moving along the r_i 
@@ -210,6 +238,7 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
         # local linearity is incorrect for this epsilon.
         #--------------------------------------------------
         loss_i, pred_i = tf_run(sess, [model.loss, model.output], feed_dict={model.x_tf : x_adv_i, model.y_tf : y0})
+        losses[ii] = loss_i
         delta_loss[ii] = (loss_i - (gamma + loss0))
         slop = 1e-6 # this should really be tied to the error term in the Taylor series expansion...
         delta_loss_test[ii] = (delta_loss[ii] + slop) > 0.0
@@ -241,17 +270,17 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
       #--------------------------------------------------
       # record performance on this example
       #--------------------------------------------------
-      results.append((alpha, 
+      results.append((1./alpha_inv, 
                       gamma, 
-                      gamma_ideal,
                       k, 
-                      np.mean(delta_loss), 
-                      np.max(delta_loss), 
+                      np.mean(losses), 
+                      np.max(losses), 
+                      loss_end,
                       np.sum(y_hat_test), 
                       np.sum(g_norm_test > 0),
                       np.mean(g_norm_test)));
 
-    df = pd.DataFrame(np.array(results), columns=('alpha', 'gamma', 'gamma_ideal', 'k', 'mean d_loss', 'max d_loss', '#AE', '||g_a||>||g||', 'mean(||g_a|| - ||g||)'))
+    df = pd.DataFrame(np.array(results), columns=('alpha', 'gamma', 'k', 'mean loss', 'max loss', 'loss_g', '#AE', '||g_a||>||g||', 'mean(||g_a|| - ||g||)'))
     print('\n'); print(df); print('\n')
 
     #--------------------------------------------------
@@ -260,7 +289,6 @@ def linearity_test(sess, model, input_dir, output_dir, epsilon=1):
 
     # here we track whether the r_i construction changed the loss as desired
     if np.sum(delta_loss_test) < 1:
-      print(delta_loss)
       overall_result.append(False)
     else:
       overall_result.append(True)
