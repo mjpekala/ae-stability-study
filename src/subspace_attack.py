@@ -97,13 +97,22 @@ def _find_minimum_epsilon(sess, model, x, y):
   l2_norm_g = norm(grad.flatten(), 2)
   ae_direction = grad / l2_norm_g
 
-  epsilon = .5
-  while True:
+  epsilon = 0.5
+  epsilon_lb = epsilon
+  epsilon_ub = None
+
+  while epsilon_ub is not None:
     x_step = x + epsilon * ae_direction
     pred_end = tf_run(sess, model.output, feed_dict={model.x_tf : x_step, model.y_tf : y})
     if np.argmax(pred_end) != np.argmax(y):
-      return epsilon
-    epsilon = epsilon * 1.1
+      epsilon_ub = epsilon
+    else:
+      epsilon_lb = epsilon
+      epsilon = epsilon * 1.1
+
+  # XXX: could search between lb and ub for more precise value
+
+  return epsilon_ub
 
 
 
