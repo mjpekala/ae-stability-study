@@ -1,9 +1,9 @@
-""" This code uses the Gradient Aligned Adversarial Subspace (GAAS) 
-    of [tra17] to analyze AE.
-
+""" 
 
   REFERENCES:
   [tra17] Tramer et al. "The Space of Transferable Adversarial Examples," 2017.
+  [tbd17a] "Decision Boundary Analysis of Adversarial Examples," blind ICRL submission 2017.
+  [tbd17b] "Visualizing the Loss Landscape of Neural Nets," blind ICLR submission 2017.
 
 """
 
@@ -40,9 +40,10 @@ def tf_run(sess, outputs, feed_dict, seed=1099):
   """Wrapper around TF session that sets the seed each time.
 
   This does not seem to remove the non-determinism I'm seeing so
-  further investigation is required...
+  further investigation is required...it may be that the graph
+  needs to be re-created each time?
   """
-  tf.set_random_seed(SEED)  # This does not seem to work...
+  tf.set_random_seed(SEED) 
   return sess.run(outputs, feed_dict=feed_dict)
 
 
@@ -87,36 +88,77 @@ def fgsm_attack(sess, model, epsilon, input_dir, output_dir):
 #-------------------------------------------------------------------------------
 #-------------------------------------------------------------------------------
 
+def _random_direction(dir_shape):
+  rv = np.random.randn(*dir_shape)  # vector with iid gaussian entries
+  return rv / norm(rv.flatten(),2)
 
-def _find_minimum_epsilon(sess, model, x, y):
-  """ Computes (approximately) the minimum ell_2 perturbation needed to change
-  the label of x when moving along the gradient direction. """
-  grad = tf_run(sess, model.loss_x, feed_dict={model.x_tf : x, model.y_tf : y})
-  grad = grad.astype(np.float64) 
 
-  l2_norm_g = norm(grad.flatten(), 2)
-  ae_direction = grad / l2_norm_g
 
-  epsilon = 0.5
-  epsilon_lb = epsilon
-  epsilon_ub = None
+def _loss_map_2d(sess, model, x0, y0, d1, d2, points=np.linspace(0, 100, 10)):
+  """ LOSS_MAP_2d
+  """
+  V1,V2 = np.meshgrid(points, points)
+  Z = np.zeros(V1.shape)   # loss map
+  Y = np.zeros(V1.shape)   # prediction map
 
-  while epsilon_ub is not None:
-    x_step = x + epsilon * ae_direction
-    pred_end = tf_run(sess, model.output, feed_dict={model.x_tf : x_step, model.y_tf : y})
-    if np.argmax(pred_end) != np.argmax(y):
-      epsilon_ub = epsilon
+
+  # TODO: support for models with batch size > 1
+  #       (may be more efficient)
+  for row in range(V1.shape[0]):
+    for col in range(V1.shape[1]):
+      x_eval = x0 + d1 * V1[row,col] + d2 * V2[row,col]
+      [loss, pred] = tf_run(sess, [model.loss, model.output], feed_dict={model.x_tf : x_eval, model.y_tf : y0})
+      Z[row,col] = loss
+      Y[row,col] = np.argmax(pred) == np.argmax(y0)
+
+  return V1, V2, Z, Y
+
+
+def _distance_to_decision_boundary(sess, model, x, y0=None, direction=None, epsilon_max=100, epsilon0=.5):
+  """ Computes (approximately) the distance one needs to move along
+      some direction in order for the CNN to change its decision.  
+
+      The distance is denoted epsilon; if no direction is specified, the gradient 
+      of the loss evaluated will be used by default.
+  """
+
+  # compute the initial prediction
+  if y0 is None:
+    pred0 = tf_run(sess, model.output, feed_dict={model.x_tf : x})
+    y0_scalar = np.argmax(pred0)
+    y0 = nets.smooth_one_hot_predictions(y0_scalar, model._num_classes)
+
+  # use gradient direction if none was provided
+  if direction is None:
+    grad = tf_run(sess, model.loss_x, feed_dict={model.x_tf : x, model.y_tf : y0})
+    direction = grad.astype(np.float64) 
+
+  # normalize vector
+  direction = direction / norm(direction.flatten(),2)
+
+  # brute force search
+  epsilon = epsilon0 
+  epsilon_lb = 0
+  done = False
+
+  while (epsilon < epsilon_max) and (not done):
+    x_step = x + epsilon * direction
+    pred_end = tf_run(sess, model.output, feed_dict={model.x_tf : x_step})
+    if np.argmax(pred_end) != np.argmax(y0):
+      # prediction changed; all done
+      done = True
     else:
+      # keep searching
       epsilon_lb = epsilon
       epsilon = epsilon * 1.1
 
-  # XXX: could search between lb and ub for more precise value
+  # XXX: could search between lb and epsilon for more precise value
 
-  return epsilon_ub
+  return epsilon
 
 
 
-def linearity_test(sess, model, input_dir, output_dir):
+def linearity_test(sess, model, input_dir, output_dir, epsilon_max=50):
   """ Here we check to see if the GAAS subspace construction seems to
       be working with representative loss functions.
   """
@@ -124,9 +166,16 @@ def linearity_test(sess, model, input_dir, output_dir):
   overall_result = []
   overall_hypothesis = [0,0]
 
+  if not os.path.exists(output_dir):
+    os.mkdir(output_dir)
+
+
   for batch_id, (filenames, x0) in enumerate(nets.load_images(input_dir, model.batch_shape)):
     n = len(filenames)
     assert(n==1) # for now, we assume batch size is 1; correctness >> speed here
+
+    base_name = os.path.split(filenames[0])[-1]
+    base_name = base_name.split('.')[0]
 
     #--------------------------------------------------
     # Use predictions on original example as ground truth.
@@ -138,7 +187,7 @@ def linearity_test(sess, model, input_dir, output_dir):
     #--------------------------------------------------
     # choose an epsilon
     #--------------------------------------------------
-    epsilon = _find_minimum_epsilon(sess, model, x0, y0)
+    epsilon = _distance_to_decision_boundary(sess, model, x0, y0=y0, epsilon_max=epsilon_max)
     print('\nEXAMPLE %3d (%s); epsilon = %0.3f' % (batch_id, filenames[0], epsilon))
 
     #--------------------------------------------------
@@ -156,8 +205,17 @@ def linearity_test(sess, model, input_dir, output_dir):
 
     was_ae_successful = (np.argmax(pred_end,axis=1) != y0_scalar)
     print('   loss / ||g|| on x0:  %2.3f / %2.3f' % (loss0, l2_norm_g))
-    print('   loss on AE:          %2.3f ' % (loss_end))
+    print('   loss after FGM:      %2.3f ' % (loss_end))
     print('   was \ell_2 gradient-step AE successful? {}'.format(was_ae_successful))
+
+    #--------------------------------------------------
+    # quick loss visualization
+    #--------------------------------------------------
+    if batch_id == 0:
+      r1 = _random_direction(grad.shape)
+
+    X_1, X_2, M_loss, M_label = _loss_map_2d(sess, model, x0, y0, grad, r1, points=np.linspace(0,5,10))
+    savemat(os.path.join(output_dir, base_name), {'X_1' : X_1, 'X_2' : X_2, 'M_loss' : M_loss, 'M_label' : M_label})
 
     # for now, we ignore cases where the original attack was unsuccessful
     if not was_ae_successful:
@@ -182,7 +240,7 @@ def linearity_test(sess, model, input_dir, output_dir):
     #       (there is a slight typo in paper):
     #
     results = []
-    alpha_vals = np.linspace(.1, 1, 10)            # trying a range of admissible gamma
+    alpha_vals = np.array([.1, .15, .2, .3, .4, .5, .6, .7, .8])            # trying a range of admissible gamma
     gamma_vals = epsilon * l2_norm_g * alpha_vals
 
     # if the "ideal" gamma (associated with movement along g) is feasible
@@ -284,12 +342,11 @@ def linearity_test(sess, model, input_dir, output_dir):
                       k, 
                       np.mean(losses), 
                       np.max(losses), 
-                      loss_end,
                       np.sum(y_hat_test), 
                       np.sum(g_norm_test > 0),
                       np.mean(g_norm_test)));
 
-    df = pd.DataFrame(np.array(results), columns=('alpha', 'gamma', 'k', 'mean loss', 'max loss', 'loss_g', '#AE', '||g_a||>||g||', 'mean(||g_a|| - ||g||)'))
+    df = pd.DataFrame(np.array(results), columns=('alpha', 'gamma', 'k', 'mean loss', 'max loss', '#AE', '||g_a||>||g||', 'mean(||g_a|| - ||g||)'))
     print('\n'); print(df); print('\n')
 
     #--------------------------------------------------
