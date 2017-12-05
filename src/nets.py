@@ -112,8 +112,8 @@ class InceptionV3:
         This can be changed, but then there may be an issue with the hessian calculation...
   """
 
-  def __init__(self, sess):
-    self.batch_shape = [1, 299, 299, 3]  # for now, we attack one image at a time
+  def __init__(self, sess, num_in_batch=1):
+    self.batch_shape = [num_in_batch, 299, 299, 3]
     self._num_classes = 1001
     self._scope = 'InceptionV3'
     self._weights_file = './Weights/inception_v3.ckpt'
