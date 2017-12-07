@@ -1,5 +1,13 @@
+"""  Here we use CIFAR-10 to explore differences between clean and AE 
+     in terms of their nearest distance to a decision boundary.
+
+  Example usage:
+     PYTHONPATH=./cleverhans python study_cifar10.py
 """
-"""
+
+__author__ = "mjp,ef"
+__date__ = "december, 2017"
+
 
 import numpy as np
 import pdb
