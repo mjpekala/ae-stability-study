@@ -1,4 +1,4 @@
-"""  Code for working with tensorflow / CNNs.
+"""  Support for Inception V3
 
   Originally developed using tensorflow 1.2.1.
   Updated to 1.3.1 via
@@ -44,6 +44,7 @@ print hessian.eval()
 
 #-------------------------------------------------------------------------------
 # Helper functions for data I/O
+# This is tailored for the NIPS 2017 challenge data set.
 #-------------------------------------------------------------------------------
 def input_filenames(input_dir):
   all_files = tf.gfile.Glob(os.path.join(input_dir, '*.png'))
@@ -93,15 +94,6 @@ def load_images(input_dir, batch_shape):
 #-------------------------------------------------------------------------------
 # Code for working with classification via CNNs. 
 #-------------------------------------------------------------------------------
-
-def smooth_one_hot_predictions(p, num_classes):
-  """Given a vector (*not* a full matrix) of predicted class labels p, 
-     generates a 'smoothed' one-hot prediction *matrix*.
-  """
-  out = (1./num_classes) * np.ones((p.size, num_classes), dtype=np.float32)
-  for ii in range(p.size):
-    out[ii,p[ii]] = 0.9
-  return out
 
 
 
