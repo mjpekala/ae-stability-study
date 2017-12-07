@@ -1,14 +1,14 @@
 """ Implements a simple model for CIFAR-10
 
-  Note: we take much of this from cleverhans
-        (see cleverhans/examples/ex_cifar10_tf.py)
-
   EXAMPLE (command-line usage):
         PYTHONPATH=./cleverhans python ./models/cifar10.py
 
-  This will train the model if weights do not yet exist; otherwise, 
-  will test the previously-trained model.
+  The command above will train the model if weights do not yet exist; 
+  if the weights do exist, the command will instead run a simple AE
+  attack against it.
 
+  Note: we take much of this from cleverhans
+        (see cleverhans/examples/ex_cifar10_tf.py)
 """
 
 import os
