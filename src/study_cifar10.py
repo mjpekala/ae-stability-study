@@ -12,24 +12,34 @@ import ae_utils
 
 
 
-def get_info(sess, model, x, y):
+def get_info(sess, model, x, y=None):
+  """ Queries CNN for information about x.
+  """
+  x_batch = np.zeros(model.batch_shape)
+  x_batch[0,...] = x
+
+  if y is not None:
     assert(y.size == model.num_classes)  # y should be one-hot
 
-    x_batch = np.zeros(model.batch_shape)
-    x_batch[0,...] = x
+    # if we have a class label, we can compute a loss
     y_batch = np.zeros((model.batch_shape[0], model.num_classes))
     y_batch[0,...] = y
 
     pred, loss, grad = sess.run([model.output, model.loss, model.loss_x], 
                                 feed_dict={model.x_tf : x_batch, model.y_tf : y_batch})
-
     return pred[0,...], loss[0], grad[0]
+  else:
+    # without a class label we can only predict
+    pred = sess.run(model.output, feed_dict={model.x_tf : x_batch})
+    return pred[0,...]
+    
 
 
 
 
 if __name__ == "__main__":
   batch_size = 32
+  d_max = 100
   tf.set_random_seed(1099) 
 
   #--------------------------------------------------
@@ -56,20 +66,43 @@ if __name__ == "__main__":
     for ii in range(100):
       xi = X_test[ii,...]
       yi = Y_test[ii,...]
+      xi_adv = X_adv[ii,...]
 
+      # TODO: should we smooth labels prior to the following analysis???
+
+      #--------------------------------------------------
+      # analysis for clean examples
+      #--------------------------------------------------
       pred, loss, grad = get_info(sess, model, xi, yi)
       y_hat = np.argmax(pred)
-      print('\n example %d, y=%d, y_hat=%d' % (ii, np.argmax(yi), np.argmax(pred)))
+      print('\nEXAMPLE %d, y=%d, y_hat=%d' % (ii, np.argmax(yi), y_hat))
 
-      # if the classifier made a mistake, we do not worry about AE.
-      if y_hat != np.argmax(yi):
-        continue
+      if y_hat == np.argmax(yi):  # only study distances for correctly classified examples
+        a,b = ae_utils.distance_to_decision_boundary(sess, model, xi, y_hat, grad, d_max)
+        print('   label of clean example first changes along gradient direction in [%0.3f, %0.3f]' % (a,b))
 
-      # some analysis of distance to boundary
-      a,b = ae_utils.distance_to_decision_boundary(sess, model, xi, y_hat, grad, 100)
-      print('   label of clean example first changes along gradient direction in [%0.3f, %0.3f]' % (a,b))
+        for jj in range(5):
+          a,b = ae_utils.distance_to_decision_boundary(sess, model, xi, y_hat, ae_utils.gaussian_vector(grad.shape), d_max)
+          print('   label of clean example first changes along random direction in [%0.3f, %0.3f]' % (a,b))
 
-      a,b = ae_utils.distance_to_decision_boundary(sess, model, xi, y_hat, ae_utils.gaussian_vector(grad.shape), 100)
-      print('   label of clean example first changes along random direction in [%0.3f, %0.3f]' % (a,b))
+      #--------------------------------------------------
+      # analysis for AE
+      #--------------------------------------------------
+      pred = get_info(sess, model, xi_adv)
+      y_hat_scalar = np.argmax(pred)
+      print('   AE %d, y=%d, y_hat=%d' % (ii, np.argmax(yi), y_hat_scalar))
 
+      # we are not really interested in unsuccessful AE
+      if y_hat_scalar != np.argmax(yi):
+        y_hat = np.zeros(yi.shape)
+        y_hat[y_hat_scalar] = 1
+
+        pred, loss, grad = get_info(sess, model, xi_adv, y_hat)
+        assert(np.argmax(pred) == np.argmax(y_hat))
+
+        a,b = ae_utils.distance_to_decision_boundary(sess, model, xi_adv, y_hat_scalar, grad, d_max)
+        print('   label of AE first changes along gradient direction in [%0.3f, %0.3f]' % (a,b))
+
+        a,b = ae_utils.distance_to_decision_boundary(sess, model, xi_adv, y_hat_scalar, ae_utils.gaussian_vector(grad.shape), d_max)
+        print('   label of AE first changes along random direction in [%0.3f, %0.3f]' % (a,b))
 
