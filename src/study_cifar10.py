@@ -17,6 +17,7 @@ import keras
 
 from models import cifar10
 import ae_utils
+from gaas import gaas
 
 
 
@@ -46,8 +47,10 @@ def get_info(sess, model, x, y=None):
 
 
 if __name__ == "__main__":
-  batch_size = 32
-  d_max = 100
+  batch_size = 32       # CNN mini-batch size
+  d_max = 100           # maximum distance to move in any one direction
+  n_samp_d = 30         # number of directions to sample
+
   tf.set_random_seed(1099) 
 
   #--------------------------------------------------
@@ -89,9 +92,18 @@ if __name__ == "__main__":
         a,b = ae_utils.distance_to_decision_boundary(sess, model, xi, y_hat, grad, d_max)
         print('   label of clean example first changes along gradient direction in [%0.3f, %0.3f]' % (a,b))
 
-        for jj in range(5):
+        # random directions
+        for jj in range(n_samp_d):
           a,b = ae_utils.distance_to_decision_boundary(sess, model, xi, y_hat, ae_utils.gaussian_vector(grad.shape), d_max)
           print('   label of clean example first changes along random direction in [%0.3f, %0.3f]' % (a,b))
+
+        # gaas directions
+        # Note: instead of picking k=n_samp_d we could use some smaller k and draw convex samples from that...
+        Q = gaas(grad, n_samp_d)
+        for jj in range(Q.shape[1]):
+          q_j = np.reshape(Q[:,jj], grad.shape)
+          a,b = ae_utils.distance_to_decision_boundary(sess, model, xi, y_hat, q_j, d_max)
+          print('   label of clean example first changes along GAAS direction %d in [%0.3f, %0.3f]' % (jj,a,b))
 
       #--------------------------------------------------
       # analysis for AE
