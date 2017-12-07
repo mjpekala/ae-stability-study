@@ -61,7 +61,7 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
     preds = sess.run(model.output, feed_dict={model.x_tf : x_batch})
     y_hat = np.argmax(preds, axis=1)
     if np.all(y_hat == y):
-      return 0, np.Inf  # fail to find place where label changes
+      return d_max, np.Inf  # label never changed in given interval
 
     first_change = np.min(np.where(y_hat != y)[0])
     assert(first_change > 0)
