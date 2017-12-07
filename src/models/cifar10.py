@@ -1,11 +1,19 @@
 """ Implements a simple model for CIFAR-10
 
-  EXAMPLE (command-line usage):
+
+  In addition to the Cifar10 class, this module provides a simple
+  command-line interface to train/test the model.  Before running,
+  you must have downloaded cleverhans.
+
+
+  EXAMPLE (command-line usage; run from parent directory):
+
         PYTHONPATH=./cleverhans python ./models/cifar10.py
 
   The command above will train the model if weights do not yet exist; 
   if the weights do exist, the command will instead run a simple AE
-  attack against it.
+  attack against it.  Note that it assumes cleverhans is in the parent
+  directory; change PYTHONPATH as needed for your local cleverhans.
 
   Note: we take much of this from cleverhans
         (see cleverhans/examples/ex_cifar10_tf.py)
@@ -124,6 +132,7 @@ def train_cifar10(sess, model):
 
 def _demo_model(sess, model):
     batch_size = 128
+    eps = 0.3
     X_train, Y_train, X_test, Y_test = data_cifar10()
 
     #
@@ -140,7 +149,7 @@ def _demo_model(sess, model):
     #
     from cleverhans.attacks import fgsm
 
-    adv_x = fgsm(model.x_tf, model.output, eps=0.3)
+    adv_x = fgsm(model.x_tf, model.output, eps=eps)
     eval_params = {'batch_size': batch_size}
     X_test_adv, = batch_eval(sess, [model.x_tf], [adv_x], [X_test], args=eval_params)
     assert X_test_adv.shape[0] == 10000, X_test_adv.shape
@@ -149,7 +158,9 @@ def _demo_model(sess, model):
     accuracy = model_eval(sess, model.x_tf, model.y_tf, model.output, 
                           X_test_adv, Y_test, args=eval_params)
     print('Test accuracy on adversarial examples: ' + str(accuracy))
- 
+
+    # save images for subsequent analysis
+    np.savez('cifar10_fgsm_eps%0.2f' % eps, x=X_test_adv, y=Y_test)
 
 
 if __name__ == "__main__":
