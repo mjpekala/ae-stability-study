@@ -86,6 +86,11 @@ def distance_to_boundary_analysis(sess, model, x0, y0, d_max, n_samp_d=30):
 
 
 
+def approx_conf(v):
+  'a crude measure of "confidence"'
+  values = np.sort(v)
+  return values[-1] - values[-2]
+
 
 def main():
   batch_size = 32       # CNN mini-batch size
@@ -127,7 +132,7 @@ def main():
       pred_ae = get_info(sess, model, xi_adv)
       y_hat_ae = np.zeros(pred_ae.shape);  y_hat_ae[np.argmax(pred_ae)] = 1
 
-      print('\nEXAMPLE %d, y=%d, y_hat=%d, y_hat_ae=%d' % (ii, np.argmax(yi), np.argmax(y_hat_clean), np.argmax(y_hat_ae)))
+      print('\nEXAMPLE %d, y=%d, y_hat=%d, y_hat_ae=%d, conf=%0.3f' % (ii, np.argmax(yi), np.argmax(y_hat_clean), np.argmax(y_hat_ae), approx_conf(pred_clean)))
 
       if np.argmax(y_hat_clean) == np.argmax(yi): # only study distances for correctly classified examples
         distance_to_boundary_analysis(sess, model, xi, yi, d_max)
