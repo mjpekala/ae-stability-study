@@ -44,17 +44,17 @@ class Cifar10:
 
   def __init__(self, sess, num_in_batch=1):
     self.batch_shape = [num_in_batch, 32, 32, 3]
-    self._num_classes = 10
+    self.num_classes = 10
     self._weights_file = './Weights/cifar10.ckpt'
 
     self.x_tf = tf.placeholder(tf.float32, shape=self.batch_shape)
-    self.y_tf = tf.placeholder(tf.float32, shape=[self.batch_shape[0], self._num_classes])
+    self.y_tf = tf.placeholder(tf.float32, shape=[self.batch_shape[0], self.num_classes])
 
     # use cleverhans API to create/access a tensorflow model
     _ = cnn_model(img_rows=32, img_cols=32, channels=3)
     self.output = _(self.x_tf)  # network predictions
     self.loss = model_loss(self.y_tf, self.output, mean=False)
-    self.loss_x = tf.gradients(self.loss, self.x_tf)
+    self.loss_x = tf.gradients(self.loss, self.x_tf)[0]
 
     saver = tf.train.Saver()
     try:
