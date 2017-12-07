@@ -1,4 +1,9 @@
 """ Some utilities useful for our AE studies.
+
+  Example usage:
+
+    PYTHONPATH=./cleverhans python study_cifar10.py
+
 """
 
 __author__ = "mjp"
