@@ -59,9 +59,9 @@ class Cifar10:
     saver = tf.train.Saver()
     try:
       saver.restore(sess, self._weights_file)
-      print('loaded cifar10 weights successfully')
+      print('[CIFAR10]: loaded model weights successfully')
     except:
-      print('WARNING: CIFAR10 model needs to be trained!!')
+      print('[CIFAR10]: WARNING - CIFAR10 model needs to be trained!!')
 
 
 def data_cifar10():
