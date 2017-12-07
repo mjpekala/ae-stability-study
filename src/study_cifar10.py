@@ -74,15 +74,16 @@ def distance_to_boundary_analysis(sess, model, x0, y0, d_max, n_samp_d=30):
   # distance in gaas directions
   # Note: instead of picking k=n_samp_d we could use some smaller k and draw convex samples from that...
   #------------------------------
-  d_min_gaas = np.zeros((n_samp_d,))
-  d_max_gaas = np.zeros((n_samp_d,))
-  Q = gaas(grad, n_samp_d)
-  for jj in range(Q.shape[1]):
-    q_j = np.reshape(Q[:,jj], grad.shape)
-    d_min_gaas[jj], d_max_gaas[jj] = ae_utils.distance_to_decision_boundary(sess, model, x0, y_hat, q_j, d_max)
+  for k in [2,10,n_samp_d]:
+    d_min_gaas = np.zeros((k,))
+    d_max_gaas = np.zeros((k,))
+    Q = gaas(grad, k)
+    for jj in range(Q.shape[1]):
+      q_j = np.reshape(Q[:,jj], grad.shape)
+      d_min_gaas[jj], d_max_gaas[jj] = ae_utils.distance_to_decision_boundary(sess, model, x0, y_hat, q_j, d_max)
 
-  d_max_rand[d_max_rand==np.Inf] = np.nan
-  print('   expected first label change along GAAS direction [%0.3f, %0.3f]' % (np.mean(d_min_gaas), np.nanmean(d_max_gaas)))
+    d_max_rand[d_max_rand==np.Inf] = np.nan
+    print('   expected first label change along k=%d GAAS direction [%0.3f, %0.3f]' % (k, np.mean(d_min_gaas), np.nanmean(d_max_gaas)))
 
 
 
