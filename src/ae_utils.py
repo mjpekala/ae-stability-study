@@ -8,7 +8,7 @@ __date__ = "dec, 2017"
 import numpy as np
 from numpy.linalg import norm
 
-import unittest
+import pdb, unittest
 
 
 def smooth_one_hot_predictions(p, num_classes):
@@ -23,7 +23,7 @@ def smooth_one_hot_predictions(p, num_classes):
 
 
 def gaussian_vector(vec_shape):
-  """ Generates a vector with iid gaussian entries
+  """ Generates a (normalized) vector with iid gaussian entries
 
     vec_shape : a tuple indicating the shape of the vector/tensor to be created.
   """
@@ -32,49 +32,40 @@ def gaussian_vector(vec_shape):
 
 
 
-def distance_to_decision_boundary(sess, model, x, 
-                                   y0=None, direction=None, 
-                                   epsilon_max=100, epsilon0=.5):
+def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1):
   """ Computes (approximately) the distance one needs to move along
       some direction in order for the CNN to change its decision.  
-
-      The distance is denoted epsilon; if no direction is specified, the gradient 
-      of the loss evaluated will be used by default.
   """
 
-  # compute the initial prediction (if needed)
-  if y0 is None:
-    pred0 = tf_run(sess, model.output, feed_dict={model.x_tf : x})
-    y0_scalar = np.argmax(pred0)
-    y0 = nets.smooth_one_hot_predictions(y0_scalar, model._num_classes)
+  direction = direction / norm(direction.ravel(),2)
 
-  # use gradient direction by default (if no explicit direction provided)
-  if direction is None:
-    grad = tf_run(sess, model.loss_x, feed_dict={model.x_tf : x, model.y_tf : y0})
-    direction = grad.astype(np.float64) 
+  n = model.batch_shape[0]
+  if n < 3:
+    raise RuntimeError('sorry, I assume a non-trivial batch size')
 
-  # normalize vector
-  direction = direction / norm(direction.flatten(),2)
+  x_batch = np.zeros(model.batch_shape, dtype=np.float32)
+  a = 0
+  b = d_max
 
-  # brute force search
-  epsilon = epsilon0 
-  epsilon_lb = 0
-  done = False
+  while (b-a) > tol:
+    # search over interval [a,b] for changes in label
+    epsilon_vals = np.linspace(a, b, n)
+    for ii in range(n):
+      x_batch[ii,...] = x + epsilon_vals[ii] * direction
 
-  while (epsilon < epsilon_max) and (not done):
-    x_step = x + epsilon * direction
-    pred_end = tf_run(sess, model.output, feed_dict={model.x_tf : x_step})
-    if np.argmax(pred_end) != np.argmax(y0):
-      # prediction changed; all done
-      done = True
-    else:
-      # keep searching
-      epsilon_lb = epsilon
-      epsilon = epsilon * 1.1
+    preds = sess.run(model.output, feed_dict={model.x_tf : x_batch})
+    y_hat = np.argmax(preds, axis=1)
+    if np.all(y_hat == y):
+      return 0, np.Inf  # fail to find place where label changes
 
-  # XXX: could search between lb and epsilon for more precise value
+    first_change = np.min(np.where(y_hat != y)[0])
+    assert(first_change > 0)
 
-  return epsilon
+    # refine interval
+    a = epsilon_vals[first_change-1]
+    b = epsilon_vals[first_change]
+
+  return a,b
 
 
 #-------------------------------------------------------------------------------
