@@ -44,12 +44,52 @@ def get_info(sess, model, x, y=None):
     
 
 
+def distance_to_boundary_analysis(sess, model, x0, y0, d_max, n_samp_d=30):
+  pred, loss, grad = get_info(sess, model, x0, y0)
+  y_hat = np.argmax(pred)
+
+  assert(y_hat == np.argmax(y0))
+
+  #------------------------------
+  # distance in gradient direction
+  #------------------------------
+  a,b = ae_utils.distance_to_decision_boundary(sess, model, x0, y_hat, grad, d_max)
+  print('   label first changes along gradient direction in [%0.3f, %0.3f]' % (a,b))
+
+  a,b = ae_utils.distance_to_decision_boundary(sess, model, x0, y_hat, -grad, d_max)
+  print('   label first changes along neg. gradient direction in [%0.3f, %0.3f]' % (a,b))
+
+  #------------------------------
+  # distance in random directions
+  #------------------------------
+  d_min_rand = np.zeros((n_samp_d,))
+  d_max_rand = np.zeros((n_samp_d,))
+  for jj in range(n_samp_d):
+    d_min_rand[jj], d_max_rand[jj] = ae_utils.distance_to_decision_boundary(sess, model, x0, y_hat, ae_utils.gaussian_vector(grad.shape), d_max)
+
+  d_max_rand[d_max_rand==np.Inf] = np.nan
+  print('   expected first label change along random direction [%0.3f, %0.3f]' % (np.mean(d_min_rand), np.nanmean(d_max_rand)))
+
+  #------------------------------
+  # distance in gaas directions
+  # Note: instead of picking k=n_samp_d we could use some smaller k and draw convex samples from that...
+  #------------------------------
+  d_min_gaas = np.zeros((n_samp_d,))
+  d_max_gaas = np.zeros((n_samp_d,))
+  Q = gaas(grad, n_samp_d)
+  for jj in range(Q.shape[1]):
+    q_j = np.reshape(Q[:,jj], grad.shape)
+    d_min_gaas[jj], d_max_gaas[jj] = ae_utils.distance_to_decision_boundary(sess, model, x0, y_hat, q_j, d_max)
+
+  d_max_rand[d_max_rand==np.Inf] = np.nan
+  print('   expected first label change along GAAS direction [%0.3f, %0.3f]' % (np.mean(d_min_gaas), np.nanmean(d_max_gaas)))
 
 
-if __name__ == "__main__":
+
+
+def main():
   batch_size = 32       # CNN mini-batch size
   d_max = 100           # maximum distance to move in any one direction
-  n_samp_d = 30         # number of directions to sample
 
   tf.set_random_seed(1099) 
 
@@ -79,50 +119,24 @@ if __name__ == "__main__":
       yi = Y_test[ii,...]
       xi_adv = X_adv[ii,...]
 
-      # TODO: should we smooth labels prior to the following analysis???
+      # TODO: should we smooth labels prior to the analysis below?
 
-      #--------------------------------------------------
-      # analysis for clean examples
-      #--------------------------------------------------
-      pred, loss, grad = get_info(sess, model, xi, yi)
-      y_hat = np.argmax(pred)
-      print('\nEXAMPLE %d, y=%d, y_hat=%d' % (ii, np.argmax(yi), y_hat))
+      pred_clean = get_info(sess, model, xi)
+      y_hat_clean = np.zeros(pred_clean.shape);  y_hat_clean[np.argmax(pred_clean)] = 1
 
-      if y_hat == np.argmax(yi):  # only study distances for correctly classified examples
-        a,b = ae_utils.distance_to_decision_boundary(sess, model, xi, y_hat, grad, d_max)
-        print('   label of clean example first changes along gradient direction in [%0.3f, %0.3f]' % (a,b))
+      pred_ae = get_info(sess, model, xi_adv)
+      y_hat_ae = np.zeros(pred_ae.shape);  y_hat_ae[np.argmax(pred_ae)] = 1
 
-        # random directions
-        for jj in range(n_samp_d):
-          a,b = ae_utils.distance_to_decision_boundary(sess, model, xi, y_hat, ae_utils.gaussian_vector(grad.shape), d_max)
-          print('   label of clean example first changes along random direction in [%0.3f, %0.3f]' % (a,b))
+      print('\nEXAMPLE %d, y=%d, y_hat=%d, y_hat_ae=%d' % (ii, np.argmax(yi), np.argmax(y_hat_clean), np.argmax(y_hat_ae)))
 
-        # gaas directions
-        # Note: instead of picking k=n_samp_d we could use some smaller k and draw convex samples from that...
-        Q = gaas(grad, n_samp_d)
-        for jj in range(Q.shape[1]):
-          q_j = np.reshape(Q[:,jj], grad.shape)
-          a,b = ae_utils.distance_to_decision_boundary(sess, model, xi, y_hat, q_j, d_max)
-          print('   label of clean example first changes along GAAS direction %d in [%0.3f, %0.3f]' % (jj,a,b))
+      if np.argmax(y_hat_clean) == np.argmax(yi): # only study distances for correctly classified examples
+        distance_to_boundary_analysis(sess, model, xi, yi, d_max)
 
-      #--------------------------------------------------
-      # analysis for AE
-      #--------------------------------------------------
-      pred = get_info(sess, model, xi_adv)
-      y_hat_scalar = np.argmax(pred)
-      print('   AE %d, y=%d, y_hat=%d' % (ii, np.argmax(yi), y_hat_scalar))
+        if np.argmax(y_hat_ae) != np.argmax(yi): # for AE, we only care about successful attack
+          print('   For AE:')
+          distance_to_boundary_analysis(sess, model, xi_adv, y_hat_ae, d_max)
 
-      # we are not really interested in unsuccessful AE
-      if y_hat_scalar != np.argmax(yi):
-        y_hat = np.zeros(yi.shape)
-        y_hat[y_hat_scalar] = 1
 
-        pred, loss, grad = get_info(sess, model, xi_adv, y_hat)
-        assert(np.argmax(pred) == np.argmax(y_hat))
 
-        a,b = ae_utils.distance_to_decision_boundary(sess, model, xi_adv, y_hat_scalar, grad, d_max)
-        print('   label of AE first changes along gradient direction in [%0.3f, %0.3f]' % (a,b))
-
-        a,b = ae_utils.distance_to_decision_boundary(sess, model, xi_adv, y_hat_scalar, ae_utils.gaussian_vector(grad.shape), d_max)
-        print('   label of AE first changes along random direction in [%0.3f, %0.3f]' % (a,b))
-
+if __name__ == "__main__":
+  main()
