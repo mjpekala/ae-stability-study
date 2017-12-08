@@ -10,6 +10,13 @@ default :
 	echo "please pick an explicit target"
 
 
+# first run is to train model; second run generates AE
+cifar10-data :
+	\rm -f ./Weights/cifar10*
+	PYTHONPATH=./cleverhans python ./models/cifar10.py
+	PYTHONPATH=./cleverhans python ./models/cifar10.py
+
+
 # Use this to create a local copy of NIPS data set
 # (split into "train" and "test")
 dataset :
