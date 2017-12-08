@@ -18,7 +18,7 @@ from scipy.io import savemat
 import tensorflow as tf
 import keras
 
-from models import cifar10
+from models import cifar10_lite as cifar10
 import ae_utils
 
 
