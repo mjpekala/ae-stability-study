@@ -126,10 +126,9 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
 
 
 
-def distance_to_decision_boundary_stats(sess, model, x0, y0, d_max, 
-                                        n_samp_d=30, k_vals=[2,5,10]):
-  """ Computes distance_to_decision_boundary() for a variety of directions and
-      also generates associated statistics.
+def loss_function_stats(sess, model, x0, y0, d_max, 
+                        n_samp_d=30, k_vals=[2,5,10]):
+  """ Computes various statistics related to the loss function in the viscinity of (x0,y0).
   """
 
   # create a simple data structure to hold results
@@ -139,6 +138,7 @@ def distance_to_decision_boundary_stats(sess, model, x0, y0, d_max,
       self.d_neg_grad = np.nan
       self.d_gauss = np.nan * np.ones((n_samp_d,))
       self.d_gaas = np.nan * np.ones((len(k_vals), n_samp_d))
+      self.ell2_grad = 0
   out = Stats()
 
   #------------------------------
@@ -147,6 +147,8 @@ def distance_to_decision_boundary_stats(sess, model, x0, y0, d_max,
   pred, loss, grad = get_info(sess, model, x0, y0)
   y_hat = np.argmax(pred)
   assert(y_hat == np.argmax(y0))
+
+  out.ell2_grad = norm(grad.ravel(),2)
 
   #------------------------------
   # distance in gradient direction
