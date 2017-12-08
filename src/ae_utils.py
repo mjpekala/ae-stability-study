@@ -66,6 +66,11 @@ def get_info(sess, model, x, y=None):
 def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1):
   """ Computes (approximately) the distance one needs to move along
       some direction in order for the CNN to change its decision.  
+
+      x         : a single example/image with shape (rows x cols x channels)
+      direction : the search direction; same shape as x
+      d_max     : the maximum distance to move along direction (scalar)
+      tol       : the maximum size of the interval around the change
   """
 
   direction = direction / norm(direction.ravel(),2)
@@ -101,13 +106,26 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
 
 
 
-def distance_to_decision_boundary_stats(sess, model, x0, y0, d_max, n_samp_d=30):
-  """ Uses distance_to_decision_boundary() for a variety of directions and
-      computes associated statistics.
+def distance_to_decision_boundary_stats(sess, model, x0, y0, d_max, 
+                                        n_samp_d=30, k_vals=[2,5,10]):
+  """ Computes distance_to_decision_boundary() for a variety of directions and
+      also generates associated statistics.
   """
+
+  # create a simple data structure to hold results
+  class Stats:
+    def __init__(self):
+      self.d_grad = np.nan
+      self.d_neg_grad = np.nan
+      self.d_gauss = np.nan * np.ones((n_samp_d,))
+      self.d_gaas = np.nan * np.ones((len(k_vals), n_samp_d))
+  out = Stats()
+
+  #------------------------------
+  # get some basic info about x
+  #------------------------------
   pred, loss, grad = get_info(sess, model, x0, y0)
   y_hat = np.argmax(pred)
-
   assert(y_hat == np.argmax(y0))
 
   #------------------------------
@@ -116,35 +134,46 @@ def distance_to_decision_boundary_stats(sess, model, x0, y0, d_max, n_samp_d=30)
   a,b = distance_to_decision_boundary(sess, model, x0, y_hat, grad, d_max)
   print('   label first changes along gradient direction in [%0.3f, %0.3f]' % (a,b))
 
+  if np.isfinite(b):
+    out.d_grad = a + (b-a)/2.
+
   a,b = distance_to_decision_boundary(sess, model, x0, y_hat, -grad, d_max)
   print('   label first changes along neg. gradient direction in [%0.3f, %0.3f]' % (a,b))
+
+  if np.isfinite(b):
+    out.d_neg_grad = a + (b-a)/2.
 
   #------------------------------
   # distance in random directions
   #------------------------------
-  d_min_rand = np.zeros((n_samp_d,))
-  d_max_rand = np.zeros((n_samp_d,))
   for jj in range(n_samp_d):
-    d_min_rand[jj], d_max_rand[jj] = distance_to_decision_boundary(sess, model, x0, y_hat, gaussian_vector(grad.shape), d_max)
+    a, b = distance_to_decision_boundary(sess, model, x0, y_hat, gaussian_vector(grad.shape), d_max)
+    if np.isfinite(b):
+      out.d_gauss[jj] = a + (b-a)/2.
 
-  d_max_rand[d_max_rand==np.Inf] = np.nan
-  print('   expected first label change along random direction [%0.3f, %0.3f]' % (np.mean(d_min_rand), np.nanmean(d_max_rand)))
+  print('   expected first label change along random direction    %0.3f' % (np.nanmean(out.d_gauss)))
 
   #------------------------------
   # distance in gaas directions
   # Note: instead of picking k=n_samp_d we could use some smaller k and draw convex samples from that...
   #------------------------------
-  for k in [2,10,n_samp_d]:
-    d_min_gaas = np.zeros((k,))
-    d_max_gaas = np.zeros((k,))
+  for k_idx, k in enumerate(k_vals):
     Q = gaas(grad, k)
-    for jj in range(Q.shape[1]):
-      q_j = np.reshape(Q[:,jj], grad.shape)
-      d_min_gaas[jj], d_max_gaas[jj] = distance_to_decision_boundary(sess, model, x0, y_hat, q_j, d_max)
 
-    d_max_rand[d_max_rand==np.Inf] = np.nan
-    print('   expected first label change along k=%d GAAS direction [%0.3f, %0.3f]' % (k, np.mean(d_min_gaas), np.nanmean(d_max_gaas)))
+    for jj in range(n_samp_d):
+      # create a convex combo of the q_i
+      coeff = np.random.uniform(size=k)
+      coeff = coeff / np.sum(coeff)
+      q_dir = np.dot(Q,coeff)
+      q_dir = np.reshape(q_dir, x0.shape)
 
+      a,b = distance_to_decision_boundary(sess, model, x0, y_hat, q_dir, d_max)
+      if np.isfinite(b):
+        out.d_gaas[k_idx,jj] = a + (b-a)/2.
+
+    print('   expected first label change along k=%02d GAAS direction %0.3f' % (k, np.nanmean(out.d_gaas[k_idx,:])))
+
+  return out
 
 
 #-------------------------------------------------------------------------------
