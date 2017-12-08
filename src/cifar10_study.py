@@ -23,8 +23,6 @@ import ae_utils
 
 
 
-
-
 def approx_conf(v):
   'a crude measure of "confidence"'
   values = np.sort(v)
@@ -52,7 +50,8 @@ def main():
   #--------------------------------------------------
   # Decision boundary analysis
   #--------------------------------------------------
-  with tf.Graph().as_default(), tf.Session() as sess:
+  config = tf.ConfigProto(allow_soft_placement=True,log_device_placement=True)
+  with tf.Graph().as_default(), tf.Session(config=config) as sess:
     keras.backend.set_image_dim_ordering('tf')
     keras.backend.set_session(sess)
     model = cifar10.Cifar10(sess, num_in_batch=batch_size)
@@ -63,7 +62,7 @@ def main():
     d_gaas_clean, d_gaas_ae = [], []
 
     #for ii in range(X_test.shape[0]):
-    for ii in range(100):
+    for ii in range(1000):
       xi = X_test[ii,...]
       yi = Y_test[ii,...]
       xi_adv = X_adv[ii,...]
@@ -88,9 +87,9 @@ def main():
       if np.argmax(y_hat_clean) != np.argmax(yi) or np.argmax(y_hat_ae) == np.argmax(yi):
         continue
 
-      stats_clean = ae_utils.distance_to_decision_boundary_stats(sess, model, xi, yi, d_max)
+      stats_clean = ae_utils.loss_function_stats(sess, model, xi, yi, d_max)
       print('   For AE:')
-      stats_ae = ae_utils.distance_to_decision_boundary_stats(sess, model, xi_adv, y_hat_ae, d_max)
+      stats_ae = ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max)
 
       # store some results
       # TODO: do not average out over all k for GAAS???
@@ -118,4 +117,10 @@ def main():
 
 
 if __name__ == "__main__":
+  from tensorflow.python.client import device_lib
+ 
+  # Use CUDA_AVAIABLE_DEVICES to restrict this to a given gpu 
+  avail = device_lib.list_local_devices()
+  print([x.name for x in avail])
+
   main()
