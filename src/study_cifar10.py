@@ -78,7 +78,7 @@ def main():
       print('\nEXAMPLE %d, y=%d, y_hat=%d, y_hat_ae=%d, conf=%0.3f' % (ii, np.argmax(yi), np.argmax(y_hat_clean), np.argmax(y_hat_ae), approx_conf(pred_clean)))
 
       # OPTIONAL: smoothing one-hot class label vectors
-      if 1:
+      if 0:
         y_hat_clean = ae_utils.smoothed_one_hot(y_hat_clean)
         y_hat_ae = ae_utils.smoothed_one_hot(y_hat_ae)
 
