@@ -179,14 +179,18 @@ def distance_to_decision_boundary_stats(sess, model, x0, y0, d_max,
 
     for jj in range(n_samp_d):
       # create a convex combo of the q_i
-      coeff = np.random.uniform(size=k)
+      coeff = np.random.uniform(size=k)    # coeff : a positive convex combo of q_i
       coeff = coeff / np.sum(coeff)
-      q_dir = np.dot(Q,coeff)
+      q_dir = np.dot(Q,coeff)              # take linear combo
+      q_dir = q_dir / norm(q_dir,2)        # back to unit norm
       q_dir = np.reshape(q_dir, x0.shape)
 
       a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, q_dir, d_max)
       if np.isfinite(b):
         out.d_gaas[k_idx,jj] = a + (b-a)/2.
+
+    if np.all(np.isnan(out.d_gaas[k_idx,:])):
+      print('WARNING: all nan from GAAS is not expected!')
 
     print('   expected first label change along k=%02d GAAS direction %0.3f' % (k, np.nanmean(out.d_gaas[k_idx,:])))
 
