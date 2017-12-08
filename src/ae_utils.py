@@ -19,14 +19,30 @@ from gaas import gaas
 
 
 
-def smooth_one_hot_predictions(p, num_classes):
-  """Given a vector (*not* a full matrix) of predicted class labels p, 
-     generates a 'smoothed' one-hot prediction *matrix*.
+#def smooth_one_hot_predictions(y, num_classes):
+#  """Given a vector (*not* a full matrix) of class labels y, 
+#     generates a 'smoothed' one-hot class *matrix*.
+#  """
+#  out = (1./num_classes) * np.ones((y.size, num_classes), dtype=np.float32)
+#  for ii in range(y.size):
+#    out[ii,y[ii]] = 0.9
+#  return out
+
+
+def smoothed_one_hot(y):
+  """ Given a one-hot encoding of the class for a single example, returns a smoothed variant.
+
+  Note: I'm not sure if the code below is the "standard" way of doing this, but it
+        preserves a normalization property for y
   """
-  out = (1./num_classes) * np.ones((p.size, num_classes), dtype=np.float32)
-  for ii in range(p.size):
-    out[ii,p[ii]] = 0.9
-  return out
+  n_classes = y.size
+  mag_true = 0.9
+  mag_rest = (1. - mag_true) / (n_classes-1)
+
+  y_smooth = mag_rest * np.ones(y.shape)
+  y_smooth[np.argmax(y)] = mag_true
+
+  return y_smooth
 
 
 
@@ -68,11 +84,15 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
       some direction in order for the CNN to change its decision.  
 
       x         : a single example/image with shape (rows x cols x channels)
+      y         : class label associated with x (scalar)
       direction : the search direction; same shape as x
       d_max     : the maximum distance to move along direction (scalar)
       tol       : the maximum size of the interval around the change
   """
 
+  assert(np.isscalar(y))
+
+  # normalize search direction
   direction = direction / norm(direction.ravel(),2)
 
   n = model.batch_shape[0]
