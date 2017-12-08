@@ -68,8 +68,7 @@ def main():
       yi = Y_test[ii,...]
       xi_adv = X_adv[ii,...]
 
-      # TODO: should we smooth labels prior to the analysis below?
-
+      # use the CNN to predict label for clean and AE
       pred_clean = ae_utils.get_info(sess, model, xi)
       y_hat_clean = np.zeros(pred_clean.shape);  y_hat_clean[np.argmax(pred_clean)] = 1
 
@@ -78,21 +77,28 @@ def main():
 
       print('\nEXAMPLE %d, y=%d, y_hat=%d, y_hat_ae=%d, conf=%0.3f' % (ii, np.argmax(yi), np.argmax(y_hat_clean), np.argmax(y_hat_ae), approx_conf(pred_clean)))
 
+      # OPTIONAL: smoothing one-hot class label vectors
+      if 1:
+        y_hat_clean = ae_utils.smoothed_one_hot(y_hat_clean)
+        y_hat_ae = ae_utils.smoothed_one_hot(y_hat_ae)
 
-      if np.argmax(y_hat_clean) == np.argmax(yi): # only study distances for correctly classified examples
-        stats_clean = ae_utils.distance_to_decision_boundary_stats(sess, model, xi, yi, d_max)
+      # for now, we only care about examples where:
+      #  1.  The network correctly classified the clean example and
+      #  2.  The AE attack was successful
+      if np.argmax(y_hat_clean) != np.argmax(yi) or np.argmax(y_hat_ae) == np.argmax(yi):
+        continue
 
-        if np.argmax(y_hat_ae) != np.argmax(yi): # for AE, we only care about successful attack
-          print('   For AE:')
-          stats_ae = ae_utils.distance_to_decision_boundary_stats(sess, model, xi_adv, y_hat_ae, d_max)
+      stats_clean = ae_utils.distance_to_decision_boundary_stats(sess, model, xi, yi, d_max)
+      print('   For AE:')
+      stats_ae = ae_utils.distance_to_decision_boundary_stats(sess, model, xi_adv, y_hat_ae, d_max)
 
-          # store some results
-          # TODO: do not average out over all k for GAAS???
-          confidence.append(approx_conf(pred_clean))
-          d_gauss_clean.append(np.nanmean(stats_clean.d_gauss))
-          d_gauss_ae.append(np.nanmean(stats_ae.d_gauss))
-          d_gaas_clean.append(np.nanmean(stats_clean.d_gaas))
-          d_gaas_ae.append(np.nanmean(stats_ae.d_gaas))
+      # store some results
+      # TODO: do not average out over all k for GAAS???
+      confidence.append(approx_conf(pred_clean))
+      d_gauss_clean.append(np.nanmean(stats_clean.d_gauss))
+      d_gauss_ae.append(np.nanmean(stats_ae.d_gauss))
+      d_gaas_clean.append(np.nanmean(stats_clean.d_gaas))
+      d_gaas_ae.append(np.nanmean(stats_ae.d_gaas))
 
   #--------------------------------------------------
   # save results
