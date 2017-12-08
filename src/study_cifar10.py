@@ -12,6 +12,9 @@ __date__ = "december, 2017"
 import numpy as np
 import pdb
 
+import numpy as np
+from scipy.io import savemat
+
 import tensorflow as tf
 import keras
 
@@ -54,6 +57,11 @@ def main():
     keras.backend.set_session(sess)
     model = cifar10.Cifar10(sess, num_in_batch=batch_size)
 
+    # some variables to store aggregate results
+    confidence = []
+    d_gauss_clean, d_gauss_ae = [], []
+    d_gaas_clean, d_gaas_ae = [], []
+
     #for ii in range(X_test.shape[0]):
     for ii in range(100):
       xi = X_test[ii,...]
@@ -70,12 +78,36 @@ def main():
 
       print('\nEXAMPLE %d, y=%d, y_hat=%d, y_hat_ae=%d, conf=%0.3f' % (ii, np.argmax(yi), np.argmax(y_hat_clean), np.argmax(y_hat_ae), approx_conf(pred_clean)))
 
+
       if np.argmax(y_hat_clean) == np.argmax(yi): # only study distances for correctly classified examples
-        ae_utils.distance_to_decision_boundary_stats(sess, model, xi, yi, d_max)
+        stats_clean = ae_utils.distance_to_decision_boundary_stats(sess, model, xi, yi, d_max)
 
         if np.argmax(y_hat_ae) != np.argmax(yi): # for AE, we only care about successful attack
           print('   For AE:')
-          ae_utils.distance_to_decision_boundary_stats(sess, model, xi_adv, y_hat_ae, d_max)
+          stats_ae = ae_utils.distance_to_decision_boundary_stats(sess, model, xi_adv, y_hat_ae, d_max)
+
+          # store some results
+          # TODO: do not average out over all k for GAAS???
+          confidence.append(approx_conf(pred_clean))
+          d_gauss_clean.append(np.nanmean(stats_clean.d_gauss))
+          d_gauss_ae.append(np.nanmean(stats_ae.d_gauss))
+          d_gaas_clean.append(np.nanmean(stats_clean.d_gaas))
+          d_gaas_ae.append(np.nanmean(stats_ae.d_gaas))
+
+  #--------------------------------------------------
+  # save results
+  #--------------------------------------------------
+  confidence = np.array(confidence)
+  d_gauss_clean = np.array(d_gauss_clean)
+  d_gauss_ae = np.array(d_gauss_ae)
+  d_gaas_clean = np.array(d_gaas_clean)
+  d_gaas_ae = np.array(d_gaas_ae)
+
+  savemat('cifar10_analysis.mat', {'conf': confidence,
+                                   'dist_gauss_clean' : d_gauss_clean,
+                                   'dist_gauss_ae' : d_gauss_ae,
+                                   'dist_gaas_clean' : d_gaas_clean,
+                                   'dist_gaas_ae' : d_gaas_ae})
 
 
 
