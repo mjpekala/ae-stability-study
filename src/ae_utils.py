@@ -92,7 +92,7 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
     preds = sess.run(model.output, feed_dict={model.x_tf : x_batch})
     y_hat = np.argmax(preds, axis=1)
     if np.all(y_hat == y):
-      return d_max, np.Inf  # label never changed in given interval
+      return d_max, np.Inf, None  # label never changed in given interval
 
     first_change = np.min(np.where(y_hat != y)[0])
     assert(first_change > 0)
@@ -101,7 +101,7 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
     a = epsilon_vals[first_change-1]
     b = epsilon_vals[first_change]
 
-  return a,b
+  return a, b, y_hat[first_change]
 
 
 
@@ -131,26 +131,23 @@ def distance_to_decision_boundary_stats(sess, model, x0, y0, d_max,
   #------------------------------
   # distance in gradient direction
   #------------------------------
-  a,b = distance_to_decision_boundary(sess, model, x0, y_hat, grad, d_max)
-  print('   label first changes along gradient direction in [%0.3f, %0.3f]' % (a,b))
-
+  a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, grad, d_max)
   if np.isfinite(b):
+    print('   label first changes (%d->%d) along gradient direction in [%0.3f, %0.3f]' % (np.argmax(y0),y_new,a,b))
     out.d_grad = a + (b-a)/2.
 
-  a,b = distance_to_decision_boundary(sess, model, x0, y_hat, -grad, d_max)
-  print('   label first changes along neg. gradient direction in [%0.3f, %0.3f]' % (a,b))
-
+  a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, -grad, d_max)
   if np.isfinite(b):
+    print('   label first changes (%d->%d) along neg. gradient direction in [%0.3f, %0.3f]' % (np.argmax(y0),y_new,a,b))
     out.d_neg_grad = a + (b-a)/2.
 
   #------------------------------
   # distance in random directions
   #------------------------------
   for jj in range(n_samp_d):
-    a, b = distance_to_decision_boundary(sess, model, x0, y_hat, gaussian_vector(grad.shape), d_max)
+    a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, gaussian_vector(grad.shape), d_max)
     if np.isfinite(b):
       out.d_gauss[jj] = a + (b-a)/2.
-
   print('   expected first label change along random direction    %0.3f' % (np.nanmean(out.d_gauss)))
 
   #------------------------------
@@ -167,7 +164,7 @@ def distance_to_decision_boundary_stats(sess, model, x0, y0, d_max,
       q_dir = np.dot(Q,coeff)
       q_dir = np.reshape(q_dir, x0.shape)
 
-      a,b = distance_to_decision_boundary(sess, model, x0, y_hat, q_dir, d_max)
+      a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, q_dir, d_max)
       if np.isfinite(b):
         out.d_gaas[k_idx,jj] = a + (b-a)/2.
 
