@@ -130,9 +130,8 @@ def train_cifar10(sess, model):
     saver.save(sess, model._weights_file)
 
 
-def _demo_model(sess, model):
+def _demo_model(sess, model, eps=0.1):
     batch_size = 128
-    eps = 0.3
     X_train, Y_train, X_test, Y_test = data_cifar10()
 
     #
