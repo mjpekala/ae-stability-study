@@ -17,7 +17,7 @@ cifar10-data :
 	PYTHONPATH=./cleverhans python ./models/cifar10.py
 
 cifar10-study :
-	PYTHONPATH=./cleverhans python ./cifar10_study.py
+	CUDA_VISIBLE_DEVICES="1", PYTHONPATH=./cleverhans python ./cifar10_study.py
 
 
 # Use this to create a local copy of NIPS data set
