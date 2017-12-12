@@ -64,7 +64,7 @@ class Cifar10:
 #  return x, y
 
 
-def _load_cifar10_python(filename):
+def _load_cifar10_python(filename, preprocess=False):
   """ Loads CIFAR10 data from file (python format).
 
    Reference:
@@ -82,7 +82,36 @@ def _load_cifar10_python(filename):
 
   assert(np.max(y) == 9)
   assert(np.min(y) == 0)
+
+  if preprocess:
+    # data preprocessing:
+    #  1. crop the data to appropriate size for CNN
+    #  2. zero mean, unit variance
+    x = x[:,4:-4, 4:-4, :]
+    x -= np.mean(x, axis=0, keepdims=True)
+    x = x / np.std(x, axis=0, keepdims=True)
+
   return x,y
+
+
+def _eval_model(sess, model, x, y):
+  n_in_batch = model.batch_shape[0]
+  n_batches = int(x.shape[0] / n_in_batch)
+
+  y_hat = np.zeros((n_in_batch*n_batches,))
+
+  for ii in range(n_batches):
+    a, b = ii*n_in_batch, (ii+1)*n_in_batch
+    x_mb = x[a:b,...]
+    y_mb = y[a:b]
+
+    pred = sess.run(model.output, feed_dict={model.x_tf : x_mb})
+    y_hat[a:b] = np.argmax(pred,axis=1)
+
+  print('accuracy on CIFAR10 test: %0.2f%%' % (100.*np.sum(y_hat == y[:n_in_batch*n_batches]) / y_hat.size))
+
+  return y_hat
+
 
 
 if __name__ == "__main__":
@@ -93,9 +122,7 @@ if __name__ == "__main__":
     # test model on some data
     # https://www.cs.toronto.edu/~kriz/cifar.html
     test_data_file = '/home/pekalmj1/Data/CIFAR10/cifar-10-batches-py/test_batch'
-    x,y = _load_cifar10_python(test_data_file)
+    x,y = _load_cifar10_python(test_data_file, preprocess=True)
 
-    # crop the data to appropriate size for CNN
-    x = x[:,2:-2, 2:-2, :]
+    _eval_model(sess, model, x, y)
 
-    #top_k_op = tf.nn.in_top_k(model.output, model.y_tf, 1)
