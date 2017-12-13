@@ -1,17 +1,31 @@
+"""
+  NOTE: This script assumes you have already trained the model using the
+        cifar10_train.py script!!!
+
+"""
+
+__author__ = "mjp"
+__date__ = 'december, 2017'
+
 
 import os
+import pdb
 
 import numpy as np
 
 import tensorflow as tf
+
 import cifar10
 from cifar10_input import read_cifar10
 
-import pdb
+from ae_utils import to_one_hot
 
 
-class Cifar10:
-  def __init__(self, sess, checkpoint_dir='./Weights/cifar10_tf'):
+class Cifar10(object):
+  """ Wrapper around CIFAR-10 model.
+  """
+
+  def __init__(self, sess, checkpoint_file_or_dir='./Weights/cifar10_tf'):
     # Note: the images are cropped prior to training.
     #       Hence, the non-standard CIFAR10 image sizes below.
     self.batch_shape = [128, 24, 24, 3]
@@ -19,52 +33,42 @@ class Cifar10:
 
     #self.x_tf, self.y_tf = cifar10.inputs(eval_data='test')
     self.x_tf = tf.placeholder(tf.float32, shape=self.batch_shape)
-    self.y_tf = tf.placeholder(tf.int32, shape=[self.batch_shape[0],])  # evidently these are not one-hot
-    self.output = cifar10.inference(self.x_tf)
+    self.y_tf = tf.placeholder(tf.int32, shape=[self.batch_shape[0],10])  
 
-    self.loss = cifar10.loss(self.output, self.y_tf)
+    self.output = cifar10.inference(self.x_tf)  # logits!
+
+    # Note: we do *not* use the original network's loss here, since that contains 
+    #       weight decay terms that do not really apply here.
+    #
+    # Instead, we build our own custom loss function for use with AE.
+    #
+    self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.output, labels=self.y_tf)
+    if False:
+      self.loss = tf.reduce_mean(self.loss)
+
     self.loss_x = tf.gradients(self.loss, self.x_tf)[0]
 
     # load weights
     # note: the directory must also contain the file "checkpoint"
     #       for this to work
-    ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
-    if ckpt and ckpt.model_checkpoint_path:
-      variable_averages = tf.train.ExponentialMovingAverage(cifar10.MOVING_AVERAGE_DECAY)
-      variables_to_restore = variable_averages.variables_to_restore()
-      saver = tf.train.Saver(variables_to_restore)
-      saver.restore(sess, ckpt.model_checkpoint_path)
-      print('[CIFAR10] restored model weighs')
+    variable_averages = tf.train.ExponentialMovingAverage(cifar10.MOVING_AVERAGE_DECAY)
+    variables_to_restore = variable_averages.variables_to_restore()
+    saver = tf.train.Saver(variables_to_restore)
+
+    if not os.path.isdir(checkpoint_file_or_dir):
+      saver.restore(sess, checkpoint_file_or_dir)
     else:
-      print('[CIFAR10] model checkpoint path "%s" is not valid' % checkpoint_dir)
+      ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+      saver.restore(sess, ckpt.model_checkpoint_path)
+
+
+  def __call__(self, x_input):
+    "This method exists for use by cleverhans."
+    return self.output
 
 
 
-#def _read_cifar_data(filename):
-#  "Loads binary CIFAR-10 data into a numpy tensor"
-#  with open(filename, 'rb') as f:
-#    raw_data = f.read()
-#  bytes_per_record = 32*32*3 + 1 # the +1 is for the label
-#  arr = array.array('B', raw_data)
-#  n_examples = int(len(arr) / bytes_per_record)
-#  assert(n_examples * bytes_per_record == len(arr))
-#
-#  y = np.zeros((n_examples,))
-#  x = np.zeros((n_examples, 32, 32, 3))
-#
-#  for idx, raw_idx in enumerate(range(0, len(raw_data), bytes_per_record)):
-#    data_block = raw_data[raw_idx:(raw_idx+bytes_per_record)]
-#    y[idx] = data_block[0]
-#    xi = np.frombuffer(data_block[1:], dtype=np.uint8)
-#    xi = np.reshape(xi, (3, 32, 32)).astype(np.float32)
-#    xi = np.transpose(xi, [1,2,0])
-#    xi = np.roll(xi, 2, axis=2)
-#    x[idx,...] = xi
-#
-#  return x, y
-
-
-def _load_cifar10_python(filename, preprocess=False):
+def load_cifar10_python(filename, preprocess=False):
   """ Loads CIFAR10 data from file (python format).
 
    Reference:
@@ -95,10 +99,18 @@ def _load_cifar10_python(filename, preprocess=False):
 
 
 def _eval_model(sess, model, x, y):
+  # Note: In the following, we toss the last few examples if 
+  #       the data set size is not a multiple of the batch size.
+  #
   n_in_batch = model.batch_shape[0]
   n_batches = int(x.shape[0] / n_in_batch)
+  n = n_in_batch * n_batches
 
-  y_hat = np.zeros((n_in_batch*n_batches,))
+  #--------------------------------------------------
+  # Test on clean/original data
+  # The accuracy here should be ~83% or so
+  #--------------------------------------------------
+  y_hat = np.zeros((n,))
 
   for ii in range(n_batches):
     a, b = ii*n_in_batch, (ii+1)*n_in_batch
@@ -108,21 +120,76 @@ def _eval_model(sess, model, x, y):
     pred = sess.run(model.output, feed_dict={model.x_tf : x_mb})
     y_hat[a:b] = np.argmax(pred,axis=1)
 
-  print('accuracy on CIFAR10 test: %0.2f%%' % (100.*np.sum(y_hat == y[:n_in_batch*n_batches]) / y_hat.size))
+  acc = 100. * np.sum(y_hat == y[:n]) / n
 
-  return y_hat
+  return y_hat, acc
+
+
+
+def _fgsm_attack(sess, model, x, y, eps, use_cleverhans=False):
+  """
+   Craft adversarial examples using Fast Gradient Sign Method (FGSM)
+  """
+  n_in_batch = model.batch_shape[0]
+  n_batches = int(x.shape[0] / n_in_batch)
+  n = n_in_batch * n_batches
+
+  x_adv = np.zeros(x.shape)  # assumes 
+
+  if use_cleverhans:
+    from cleverhans import utils_tf
+    from cleverhans.model import CallableModelWrapper
+    from cleverhans.attacks import FastGradientMethod
+
+    fgsm = FastGradientMethod(model, sess=sess)
+    x_adv_tf = fgsm.generate(model.x_tf, eps=.05, clip_min=0, clip_max=1.)
+
+    # TODO: finish this!
+    #eval_params = {'batch_size': n_in_batch}
+    #x_adv, = batch_eval(sess, [model.x_tf], [adv_x_tf], [x], args=eval_params)
+
+  else:
+    for ii in range(n_batches):
+      a, b = ii*n_in_batch, (ii+1)*n_in_batch
+      x_mb = x[a:b,...]
+      y_mb = y[a:b]
+
+      # Note: we are not concerned with label leaking here because we
+      #       will not use these examples for adversarial training.
+      #       See also: https://arxiv.org/pdf/1611.01236.pdf
+      #
+      y_mb = to_one_hot(y_mb, 10)
+      grad = sess.run(model.loss_x, feed_dict={model.x_tf : x_mb, model.y_tf : y_mb})
+
+      x_adv[a:b,...] = x[a:b] + np.sign(grad) * eps
+
+  return x_adv
+
 
 
 
 if __name__ == "__main__":
 
   with tf.Graph().as_default(), tf.Session() as sess:
-    model = Cifar10(sess, '../../Weights/cifar10_tf')
+    #model = Cifar10(sess, '../../Weights/cifar10_tf')
+    model = Cifar10(sess, '../../Weights/cifar10_tf/model.ckpt-961504')
+    eps = 0.05
 
     # test model on some data
-    # https://www.cs.toronto.edu/~kriz/cifar.html
+    #  (data from: https://www.cs.toronto.edu/~kriz/cifar.html)
+    #
     test_data_file = '/home/pekalmj1/Data/CIFAR10/cifar-10-batches-py/test_batch'
-    x,y = _load_cifar10_python(test_data_file, preprocess=True)
+    x,y = load_cifar10_python(test_data_file, preprocess=True)
 
-    _eval_model(sess, model, x, y)
+    # also try an adversarial attack
+    y_hat, acc = _eval_model(sess, model, x, y)
+    print('[cifar10_wrapper]: accuracy on original CIFAR10 test: %0.2f%%' % acc)
 
+    x_adv = _fgsm_attack(sess, model, x, y, eps=eps)
+    y_hat_adv, acc_adv = _eval_model(sess, model, x_adv, y)
+    print('[cifar10_wrapper]: accuracy on FGSM CIFAR10 test:     %0.2f%%' % acc_adv)
+
+    # save images for subsequent analysis
+    out_fn = 'cifar10_fgsm_eps%0.2f' % eps
+    np.savez(out_fn, x=x, y=y, x_fgsm=x_adv)
+    print('[cifar10_wrapper]: results saved to file: "%s"\n' % out_fn)
