@@ -41,7 +41,7 @@ import time
 
 import tensorflow as tf
 
-import cifar10
+from . import cifar10
 
 parser = cifar10.parser
 
