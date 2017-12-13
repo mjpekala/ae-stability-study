@@ -11,7 +11,9 @@ __date__ = "dec, 2017"
 
 
 import numpy as np
+from scipy.stats import ortho_group
 from numpy.linalg import norm
+import random
 
 import pdb, unittest
 
@@ -134,17 +136,12 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
 def loss_function_stats(sess, model, x0, y0, d_max, 
                         n_samp_d=30, k_vals=[2,5,10]):
   """ Computes various statistics related to the loss function in the viscinity of (x0,y0).
+  returns a dictionary with the different stats
   """
 
   # create a simple data structure to hold results
-  class Stats:
-    def __init__(self):
-      self.d_grad = np.nan
-      self.d_neg_grad = np.nan
-      self.d_gauss = np.nan * np.ones((n_samp_d,))
-      self.d_gaas = np.nan * np.ones((len(k_vals), n_samp_d))
-      self.ell2_grad = 0
-  out = Stats()
+  #changed to a list of dictionaries of relevant pieces
+  out = []
 
   #------------------------------
   # get some basic info about x
@@ -153,7 +150,7 @@ def loss_function_stats(sess, model, x0, y0, d_max,
   y_hat = np.argmax(pred)
   assert(y_hat == np.argmax(y0))
 
-  out.ell2_grad = norm(grad.ravel(),2)
+
 
   #------------------------------
   # distance in gradient direction
@@ -161,12 +158,13 @@ def loss_function_stats(sess, model, x0, y0, d_max,
   a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, grad, d_max)
   if np.isfinite(b):
     print('   label first changes (%d->%d) along gradient direction in [%0.3f, %0.3f]' % (np.argmax(y0),y_new,a,b))
-    out.d_grad = a + (b-a)/2.
+    out.append({'y':y0, 'y_hat':y_new, 'ell2_grad':norm(grad.ravel(), 2), 'direction_type': 'gradient', 'boundary_distance': (a+b)/2  })
 
   a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, -grad, d_max)
   if np.isfinite(b):
     print('   label first changes (%d->%d) along neg. gradient direction in [%0.3f, %0.3f]' % (np.argmax(y0),y_new,a,b))
-    out.d_neg_grad = a + (b-a)/2.
+    out.append({'y': y0, 'y_hat': y_new, 'ell2_grad': norm(grad.ravel(), 2), 'direction_type': 'neg_gradient',
+              'boundary_distance': (a + b) / 2})
 
   #------------------------------
   # distance in random directions
@@ -174,8 +172,16 @@ def loss_function_stats(sess, model, x0, y0, d_max,
   for jj in range(n_samp_d):
     a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, gaussian_vector(grad.shape), d_max)
     if np.isfinite(b):
-      out.d_gauss[jj] = a + (b-a)/2.
+      out.append({'y': y0, 'y_hat': y_new, 'ell2_grad': norm(grad.ravel(), 2), 'direction_type': 'gaussian', 'direction_id': jj,
+                  'boundary_distance': (a + b) / 2 })
   print('   expected first label change along random direction    %0.3f' % (np.nanmean(out.d_gauss)))
+
+  for id, orth_dir in enumerate(ortho_group.rvs(dim=np.prod(grad.shape), size=n_samp_d)):
+    a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, orth_dir.reshape(grad.shape), d_max)
+    if np.isfinite(b):
+      out.append(
+        {'y': y0, 'y_hat': y_new, 'ell2_grad': norm(grad.ravel(), 2), 'direction_type': 'ortho_group', 'direction_id': id,
+         'boundary_distance': (a + b) / 2})
 
   #------------------------------
   # distance in gaas directions
@@ -184,7 +190,13 @@ def loss_function_stats(sess, model, x0, y0, d_max,
   for k_idx, k in enumerate(k_vals):
     Q = gaas(grad, k)
 
-    for jj in range(n_samp_d):
+    for id, col in enumerate(Q.T): #first check different directions from subspace
+      a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, col.reshape(grad.shape), d_max)
+      if np.isfinite(b):
+        out.append({'y': y0, 'y_hat': y_new, 'ell2_grad': norm(grad.ravel(), 2), 'direction_type': 'gaas',
+           'direction_id': id, 'boundary_distance': (a + b) / 2, 'k': k})
+
+    for jj in range(min(n_samp_d, k)):
       # create a convex combo of the q_i
       coeff = np.random.uniform(size=k)    # coeff : a positive convex combo of q_i
       coeff = coeff / np.sum(coeff)
@@ -194,7 +206,8 @@ def loss_function_stats(sess, model, x0, y0, d_max,
 
       a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, q_dir, d_max)
       if np.isfinite(b):
-        out.d_gaas[k_idx,jj] = a + (b-a)/2.
+        out.append({'y': y0, 'y_hat': y_new, 'ell2_grad': norm(grad.ravel(), 2), 'direction_type': 'gaas_convex_combo',
+                    'direction_id': id, 'boundary_distance': (a + b) / 2, 'k': k})
 
     if np.all(np.isnan(out.d_gaas[k_idx,:])):
       print('WARNING: all nan from GAAS is not expected!')

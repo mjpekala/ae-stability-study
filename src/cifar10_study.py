@@ -12,7 +12,7 @@ __date__ = "december, 2017"
 import numpy as np
 import pdb
 
-import numpy as np
+import pandas as pd
 from scipy.io import savemat
 
 import tensorflow as tf
@@ -64,6 +64,7 @@ def main():
     d_gauss_clean, d_gauss_ae = [], []
     d_gaas_clean, d_gaas_ae = [], []
 
+    df_list = []
     #for ii in range(X_test.shape[0]):
     for ii in range(1000):  # for now we only consider a subset of examples (saves time)
       xi = X_test[ii,...]
@@ -91,9 +92,16 @@ def main():
       if np.argmax(y_hat_clean) != yi_scalar or np.argmax(y_hat_ae) == yi_scalar:
         continue
 
-      stats_clean = ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max)
+      stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max))
+      stats['Dataset'] = 'cifar10'
+      stats['Example#'] = ii
+      df_list.append(stats)
+
       print('   For AE:')
-      stats_ae = ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max)
+      stats_ae = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max))
+      stats_ae['Dataset'] = 'cifar10'
+      stats_ae['Example#'] = 'Adv-' + ii
+      df_list.append(stats)
 
       # store some results
       # TODO: do not average out over all k for GAAS???
