@@ -1,6 +1,10 @@
 """
-  NOTE: This script assumes you have already trained the model using the
-        cifar10_train.py script!!!
+  !!! NOTE !!!
+   1.  This script assumes you ahve already trained the model
+       (using cifar10_train.py).
+   2.  This script assumes you are running from the project root directory
+       e.g. via
+         python -m models.cifar10.cifar10_wrapper.py
 
 """
 
@@ -15,8 +19,8 @@ import numpy as np
 
 import tensorflow as tf
 
-import cifar10
-from cifar10_input import read_cifar10
+from . import cifar10
+from .cifar10_input import read_cifar10
 
 from ae_utils import to_one_hot
 
@@ -171,8 +175,7 @@ def _fgsm_attack(sess, model, x, y, eps, use_cleverhans=False):
 if __name__ == "__main__":
 
   with tf.Graph().as_default(), tf.Session() as sess:
-    #model = Cifar10(sess, '../../Weights/cifar10_tf')
-    model = Cifar10(sess, '../../Weights/cifar10_tf/model.ckpt-961504')
+    model = Cifar10(sess, './Weights/cifar10_tf/model.ckpt-961504')
     eps = 0.05
 
     # test model on some data
