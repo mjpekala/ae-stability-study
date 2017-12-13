@@ -29,7 +29,7 @@ class Cifar10(object):
   """ Wrapper around CIFAR-10 model.
   """
 
-  def __init__(self, sess, checkpoint_file_or_dir='./Weights/cifar10_tf'):
+  def __init__(self, sess, checkpoint_file_or_dir='./Weights/cifar10_tf/model.ckpt-961504'):
     # Note: the images are cropped prior to training.
     #       Hence, the non-standard CIFAR10 image sizes below.
     #
