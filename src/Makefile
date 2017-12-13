@@ -10,15 +10,40 @@ default :
 	echo "please pick an explicit target"
 
 
-# first run is to train model; second run generates AE
-cifar10-data :
-	\rm -f ./Weights/cifar10*
-	PYTHONPATH=./cleverhans python ./models/cifar10_lite.py
-	PYTHONPATH=./cleverhans python ./models/cifar10_lite.py
+#-------------------------------------------------------------------------------
+# CIFAR-10
+#-------------------------------------------------------------------------------
+
+# Trains the CIFAR-10 tensorflow example model.
+# After training is complete, move/copy the 
+# desired checkpoint file from /tmp/cifar10_data to
+# ./Weights for use by other scripts.
+#
+# Note: this takes a long time; you may want to do:
+#     nohup make cifar10-train
+# and work on another project for awhile.
+#
+# We put training on GPU 1 to be polite;
+# change/remove CUDA_VISIBLE_DEVICES if you don't want this
+# (e.g. if you have only one GPU on your system).
+#
+cifar10-train :
+	CUDA_VISIBLE_DEVICES="1" python -m models.cifar10.cifar10_train
+
+
+# Generates AE for cifar-10
+cifar10-ae :
+	python -m models.cifar10.cifar10_wrapper
+
 
 cifar10-study :
-	CUDA_VISIBLE_DEVICES="1", PYTHONPATH=./cleverhans python ./cifar10_study.py
+	python cifar10_study.py
 
+
+
+#-------------------------------------------------------------------------------
+# NIPS-1000
+#-------------------------------------------------------------------------------
 
 # Use this to create a local copy of NIPS data set
 # (split into "train" and "test")
