@@ -18,7 +18,8 @@ from scipy.io import savemat
 import tensorflow as tf
 import keras
 
-from models import cifar10_lite as cifar10
+#from models import cifar10_lite as cifar10
+from models.cifar10 import cifar10_wrapper as cifar10
 import ae_utils
 
 
@@ -39,10 +40,12 @@ def main():
   # Load clean and AE data.
   # In the future we perhaps might load muliple different AE data sets...
   #--------------------------------------------------
-  X_train, Y_train, X_test, Y_test = cifar10.data_cifar10()
+  #_, _, X_test, Y_test = cifar10.data_cifar10()
+  data_file = '/home/pekalmj1/Data/CIFAR10/cifar-10-batches-py/test_batch'
+  X_test, Y_test = cifar10.load_cifar10_python(data_file)
 
-  f = np.load('cifar10_fgsm_eps0.30.npz')
-  X_adv = f['x']
+  f = np.load('./cifar10_fgsm_eps0.05.npz')  # created by cifar10_wrapper.py
+  X_adv = f['x_fgsm']
 
   print(X_test.shape, X_adv.shape, Y_test.shape)
   assert(np.all(X_test.shape == X_adv.shape))
@@ -54,7 +57,7 @@ def main():
   with tf.Graph().as_default(), tf.Session(config=config) as sess:
     keras.backend.set_image_dim_ordering('tf')
     keras.backend.set_session(sess)
-    model = cifar10.Cifar10(sess, num_in_batch=batch_size)
+    model = cifar10.Cifar10(sess)
 
     # some variables to store aggregate results
     confidence = []
@@ -62,9 +65,10 @@ def main():
     d_gaas_clean, d_gaas_ae = [], []
 
     #for ii in range(X_test.shape[0]):
-    for ii in range(1000):
+    for ii in range(1000):  # for now we only consider a subset of examples (saves time)
       xi = X_test[ii,...]
-      yi = Y_test[ii,...]
+      yi_scalar = Y_test[ii]  # NOTE: whether this is one-hot or not depends on data source!
+      yi_oh = ae_utils.to_one_hot(yi_scalar, 10)
       xi_adv = X_adv[ii,...]
 
       # use the CNN to predict label for clean and AE
@@ -74,7 +78,7 @@ def main():
       pred_ae = ae_utils.get_info(sess, model, xi_adv)
       y_hat_ae = np.zeros(pred_ae.shape);  y_hat_ae[np.argmax(pred_ae)] = 1
 
-      print('\nEXAMPLE %d, y=%d, y_hat=%d, y_hat_ae=%d, conf=%0.3f' % (ii, np.argmax(yi), np.argmax(y_hat_clean), np.argmax(y_hat_ae), approx_conf(pred_clean)))
+      print('\nEXAMPLE %d, y=%d, y_hat=%d, y_hat_ae=%d, conf=%0.3f' % (ii, yi_scalar, np.argmax(y_hat_clean), np.argmax(y_hat_ae), approx_conf(pred_clean)))
 
       # OPTIONAL: smoothing one-hot class label vectors
       if 0:
@@ -84,10 +88,10 @@ def main():
       # for now, we only care about examples where:
       #  1.  The network correctly classified the clean example and
       #  2.  The AE attack was successful
-      if np.argmax(y_hat_clean) != np.argmax(yi) or np.argmax(y_hat_ae) == np.argmax(yi):
+      if np.argmax(y_hat_clean) != yi_scalar or np.argmax(y_hat_ae) == yi_scalar:
         continue
 
-      stats_clean = ae_utils.loss_function_stats(sess, model, xi, yi, d_max)
+      stats_clean = ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max)
       print('   For AE:')
       stats_ae = ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max)
 
