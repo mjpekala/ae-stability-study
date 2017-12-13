@@ -32,6 +32,7 @@ class Cifar10(object):
   def __init__(self, sess, checkpoint_file_or_dir='./Weights/cifar10_tf'):
     # Note: the images are cropped prior to training.
     #       Hence, the non-standard CIFAR10 image sizes below.
+    #
     self.batch_shape = [128, 24, 24, 3]
     self.num_classes = 10
 
@@ -72,14 +73,14 @@ class Cifar10(object):
 
 
 
-def load_cifar10_python(filename, preprocess=False):
+def load_cifar10_python(filename, preprocess=True):
   """ Loads CIFAR10 data from file (python format).
 
    Reference:
      https://www.cs.toronto.edu/~kriz/cifar.html
   """
   import pickle
-  with open(test_data_file, 'rb') as f:
+  with open(filename, 'rb') as f:
     d = pickle.load(f, encoding='bytes')
     x = d[b'data']
     y = np.array(d[b'labels'])
@@ -108,23 +109,25 @@ def _eval_model(sess, model, x, y):
   #
   n_in_batch = model.batch_shape[0]
   n_batches = int(x.shape[0] / n_in_batch)
-  n = n_in_batch * n_batches
+  if n_in_batch * n_batches < x.shape[0]:
+    n_batches += 1
 
   #--------------------------------------------------
   # Test on clean/original data
   # The accuracy here should be ~83% or so
   #--------------------------------------------------
-  y_hat = np.zeros((n,))
+  y_hat = np.zeros(y.shape)
+  x_mb = np.zeros((n_in_batch,) + x.shape[1:], dtype=np.float32)
 
   for ii in range(n_batches):
-    a, b = ii*n_in_batch, (ii+1)*n_in_batch
-    x_mb = x[a:b,...]
-    y_mb = y[a:b]
+    a = ii * n_in_batch
+    b = min(x.shape[0], (ii+1) * n_in_batch)
+    x_mb[0:(b-a),...] = x[a:b,...]
 
     pred = sess.run(model.output, feed_dict={model.x_tf : x_mb})
-    y_hat[a:b] = np.argmax(pred,axis=1)
+    y_hat[a:b] = np.argmax(pred[0:(b-a),:],axis=1)
 
-  acc = 100. * np.sum(y_hat == y[:n]) / n
+  acc = 100. * np.sum(y_hat == y) / y.size
 
   return y_hat, acc
 
@@ -136,9 +139,10 @@ def _fgsm_attack(sess, model, x, y, eps, use_cleverhans=False):
   """
   n_in_batch = model.batch_shape[0]
   n_batches = int(x.shape[0] / n_in_batch)
-  n = n_in_batch * n_batches
+  if n_in_batch * n_batches < x.shape[0]:
+    n_batches += 1
 
-  x_adv = np.zeros(x.shape)  # assumes 
+  x_adv = np.zeros(x.shape)
 
   if use_cleverhans:
     from cleverhans import utils_tf
@@ -153,18 +157,22 @@ def _fgsm_attack(sess, model, x, y, eps, use_cleverhans=False):
     #x_adv, = batch_eval(sess, [model.x_tf], [adv_x_tf], [x], args=eval_params)
 
   else:
+    x_mb = np.zeros((n_in_batch,) + x.shape[1:], dtype=np.float32)
+    y_mb = np.zeros((n_in_batch,10), dtype=np.float32)
+
     for ii in range(n_batches):
-      a, b = ii*n_in_batch, (ii+1)*n_in_batch
-      x_mb = x[a:b,...]
-      y_mb = y[a:b]
+      a = ii * n_in_batch
+      b = min(x.shape[0], (ii+1) * n_in_batch)
+
+      x_mb[0:(b-a),...] = x[a:b,...]
+      y_mb[0:(b-a), :] = to_one_hot(y[a:b], 10)
 
       # Note: we are not concerned with label leaking here because we
       #       will not use these examples for adversarial training.
       #       See also: https://arxiv.org/pdf/1611.01236.pdf
       #
-      y_mb = to_one_hot(y_mb, 10)
       grad = sess.run(model.loss_x, feed_dict={model.x_tf : x_mb, model.y_tf : y_mb})
-
+      grad = grad[0:(b-a),...]
       x_adv[a:b,...] = x[a:b] + np.sign(grad) * eps
 
   return x_adv
@@ -186,11 +194,11 @@ if __name__ == "__main__":
 
     # also try an adversarial attack
     y_hat, acc = _eval_model(sess, model, x, y)
-    print('[cifar10_wrapper]: accuracy on original CIFAR10 test: %0.2f%%' % acc)
+    print('[cifar10_wrapper]: network accuracy on CIFAR10 test (%d examples): %0.2f%%' % (y_hat.size,acc))
 
     x_adv = _fgsm_attack(sess, model, x, y, eps=eps)
     y_hat_adv, acc_adv = _eval_model(sess, model, x_adv, y)
-    print('[cifar10_wrapper]: accuracy on FGSM CIFAR10 test:     %0.2f%%' % acc_adv)
+    print('[cifar10_wrapper]: network accuracy on FGSM CIFAR10 (%d examples): %0.2f%%' % (y_hat_adv.size, acc_adv))
 
     # save images for subsequent analysis
     out_fn = 'cifar10_fgsm_eps%0.2f' % eps
