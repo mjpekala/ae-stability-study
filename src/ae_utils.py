@@ -20,9 +20,17 @@ from gaas import gaas
 
 
 def to_one_hot(y_vec, n_classes):
+  """   
+    y_vec     : a numpy array of class labels (non-one-hot, obv.)
+    n_classes : the total # of classes 
+  """
   out = np.zeros((y_vec.size, n_classes), dtype=np.float32)
-  for ii in range(len(y_vec)):
-    out[ii,y_vec[ii]] = 1
+  if np.isscalar(y_vec):
+    out[0,y_vec] = 1
+  else:
+    for ii in range(y_vec.size):
+      out[ii,y_vec[ii]] = 1
+
   return out
 
 
