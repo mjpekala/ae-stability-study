@@ -19,14 +19,11 @@ from gaas import gaas
 
 
 
-#def smooth_one_hot_predictions(y, num_classes):
-#  """Given a vector (*not* a full matrix) of class labels y, 
-#     generates a 'smoothed' one-hot class *matrix*.
-#  """
-#  out = (1./num_classes) * np.ones((y.size, num_classes), dtype=np.float32)
-#  for ii in range(y.size):
-#    out[ii,y[ii]] = 0.9
-#  return out
+def to_one_hot(y_vec, n_classes):
+  out = np.zeros((y_vec.size, n_classes), dtype=np.float32)
+  for ii in range(len(y_vec)):
+    out[ii,y_vec[ii]] = 1
+  return out
 
 
 def smoothed_one_hot(y):
