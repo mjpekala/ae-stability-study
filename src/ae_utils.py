@@ -14,11 +14,19 @@ import numpy as np
 from scipy.stats import ortho_group
 from numpy.linalg import norm
 import random
+import pandas as pd
 
 import pdb, unittest
 
 from gaas import gaas
 
+
+
+def finite_mean(v):
+  if not np.any(np.isfinite(v)):
+    return np.nan
+  else:
+    return np.mean(v[np.isfinite(v)])
 
 
 def to_one_hot(y_vec, n_classes):
@@ -141,7 +149,38 @@ def loss_function_stats(sess, model, x0, y0, d_max,
 
   # create a simple data structure to hold results
   #changed to a list of dictionaries of relevant pieces
-  out = []
+  class Direction_Stats:
+    def __init__(self):
+      self.data = []
+
+    def __str__(self):
+      df = self.as_dataframe()
+      s = ""
+
+      for dname in ['gradient', 'neg-gradient']:
+        tmp = df.loc[df['direction_type'] == dname]
+        assert(len(tmp)==1)
+        s += '  label first changes (%d->%d) along "%s" direction at distance %0.3f\n' % (tmp['y'], tmp['y_hat'], dname, tmp['boundary_distance'])
+
+      for dname in ['gaussian', 'gaas']:
+        tmp = df.loc[df['direction_type'] == dname]
+        s += '  expected label change along "%s" direction: %0.3f\n' % (dname, finite_mean(tmp['boundary_distance']))
+
+      return s
+
+    def as_dataframe(self):
+      return pd.DataFrame(self.data)
+
+    def append(self, direction_type, y, y_hat, boundary_distance, **kargs):
+      if not np.isscalar(y):
+        y = np.argmax(y)
+      # TODO: could check if boundary_distance is finite to avoid adding Inf to
+      #       the table.  However, this is not necessarily an issue.
+      entry = {'direction_type' : direction_type, 'y' : y, 'y_hat' : y_hat, 'boundary_distance' : boundary_distance}
+      entry.update(kargs)
+      self.data.append(entry)
+
+  stats = Direction_Stats()
 
   #------------------------------
   # get some basic info about x
@@ -150,38 +189,26 @@ def loss_function_stats(sess, model, x0, y0, d_max,
   y_hat = np.argmax(pred)
   assert(y_hat == np.argmax(y0))
 
-
-
   #------------------------------
   # distance in gradient direction
   #------------------------------
   a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, grad, d_max)
-  if np.isfinite(b):
-    print('   label first changes (%d->%d) along gradient direction in [%0.3f, %0.3f]' % (np.argmax(y0),y_new,a,b))
-    out.append({'y':y0, 'y_hat':y_new, 'ell2_grad':norm(grad.ravel(), 2), 'direction_type': 'gradient', 'boundary_distance': (a+b)/2  })
+  stats.append('gradient', np.argmax(y0), y_new, (a+b)/2.)
 
   a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, -grad, d_max)
-  if np.isfinite(b):
-    print('   label first changes (%d->%d) along neg. gradient direction in [%0.3f, %0.3f]' % (np.argmax(y0),y_new,a,b))
-    out.append({'y': y0, 'y_hat': y_new, 'ell2_grad': norm(grad.ravel(), 2), 'direction_type': 'neg_gradient',
-              'boundary_distance': (a + b) / 2})
+  stats.append('neg-gradient', np.argmax(y0), y_new, (a+b)/2.)
 
   #------------------------------
   # distance in random directions
   #------------------------------
   for jj in range(n_samp_d):
     a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, gaussian_vector(grad.shape), d_max)
-    if np.isfinite(b):
-      out.append({'y': y0, 'y_hat': y_new, 'ell2_grad': norm(grad.ravel(), 2), 'direction_type': 'gaussian', 'direction_id': jj,
-                  'boundary_distance': (a + b) / 2 })
-  print('   expected first label change along random direction    %0.3f' % (np.nanmean(out.d_gauss)))
+    stats.append('gaussian', np.argmax(y0), y_new, (a+b)/2.)
 
-  for id, orth_dir in enumerate(ortho_group.rvs(dim=np.prod(grad.shape), size=n_samp_d)):
-    a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, orth_dir.reshape(grad.shape), d_max)
-    if np.isfinite(b):
-      out.append(
-        {'y': y0, 'y_hat': y_new, 'ell2_grad': norm(grad.ravel(), 2), 'direction_type': 'ortho_group', 'direction_id': id,
-         'boundary_distance': (a + b) / 2})
+  # MJP: this seemed to run very slowly for me...commented out temporarily
+  #for did, orth_dir in enumerate(ortho_group.rvs(dim=np.prod(grad.shape), size=n_samp_d)):
+  #  a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, orth_dir.reshape(grad.shape), d_max)
+  #  stats.append('ortho_group', np.argmax(y0), y_new, (a+b)/2, direction_id=did)
 
   #------------------------------
   # distance in gaas directions
@@ -190,11 +217,9 @@ def loss_function_stats(sess, model, x0, y0, d_max,
   for k_idx, k in enumerate(k_vals):
     Q = gaas(grad, k)
 
-    for id, col in enumerate(Q.T): #first check different directions from subspace
+    for did, col in enumerate(Q.T): #first check different directions from subspace
       a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, col.reshape(grad.shape), d_max)
-      if np.isfinite(b):
-        out.append({'y': y0, 'y_hat': y_new, 'ell2_grad': norm(grad.ravel(), 2), 'direction_type': 'gaas',
-           'direction_id': id, 'boundary_distance': (a + b) / 2, 'k': k})
+      stats.append('gaas', np.argmax(y0), y_new, (a+b)/2., direction_id=did, k=k)
 
     for jj in range(min(n_samp_d, k)):
       # create a convex combo of the q_i
@@ -205,16 +230,12 @@ def loss_function_stats(sess, model, x0, y0, d_max,
       q_dir = np.reshape(q_dir, x0.shape)
 
       a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, q_dir, d_max)
-      if np.isfinite(b):
-        out.append({'y': y0, 'y_hat': y_new, 'ell2_grad': norm(grad.ravel(), 2), 'direction_type': 'gaas_convex_combo',
-                    'direction_id': id, 'boundary_distance': (a + b) / 2, 'k': k})
+      stats.append('gaas_convex_combo', np.argmax(y0), y_new, (a+b)/2., k=k)
 
-    if np.all(np.isnan(out.d_gaas[k_idx,:])):
-      print('WARNING: all nan from GAAS is not expected!')
+  if True:
+    print("%s\n" % str(stats))
 
-    print('   expected first label change along k=%02d GAAS direction %0.3f' % (k, np.nanmean(out.d_gaas[k_idx,:])))
-
-  return out
+  return stats.as_dataframe()
 
 
 #-------------------------------------------------------------------------------
