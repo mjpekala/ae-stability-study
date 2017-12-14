@@ -9,6 +9,8 @@ __author__ = "mjp,ef"
 __date__ = "december, 2017"
 
 
+import time
+
 import numpy as np
 import pdb
 
@@ -16,7 +18,7 @@ import pandas as pd
 from scipy.io import savemat
 
 import tensorflow as tf
-import keras
+#import keras
 
 #from models import cifar10_lite as cifar10
 from models.cifar10 import cifar10_wrapper as cifar10
@@ -56,16 +58,13 @@ def main():
   #--------------------------------------------------
   config = tf.ConfigProto(allow_soft_placement=True,log_device_placement=True)
   with tf.Graph().as_default(), tf.Session(config=config) as sess:
-    keras.backend.set_image_dim_ordering('tf')
-    keras.backend.set_session(sess)
+    #keras.backend.set_image_dim_ordering('tf')
+    #keras.backend.set_session(sess)
     model = cifar10.Cifar10(sess)
 
-    # some variables to store aggregate results
-    confidence = []
-    d_gauss_clean, d_gauss_ae = [], []
-    d_gaas_clean, d_gaas_ae = [], []
+    dsamp = ae_utils.RandomDirections(X_test[0,...].shape)
+    df_list = []  # stores intermediate results
 
-    df_list = []
     #for ii in range(X_test.shape[0]):
     for ii in range(100):  # for now we only consider a subset of examples (saves time)
       xi = X_test[ii,...]
@@ -75,10 +74,10 @@ def main():
 
       # use the CNN to predict label for clean and AE
       pred_clean = ae_utils.get_info(sess, model, xi)
-      y_hat_clean = np.zeros(pred_clean.shape);  y_hat_clean[np.argmax(pred_clean)] = 1
+      y_hat_clean = ae_utils.to_one_hot(np.argmax(pred_clean), 10)
 
       pred_ae = ae_utils.get_info(sess, model, xi_adv)
-      y_hat_ae = np.zeros(pred_ae.shape);  y_hat_ae[np.argmax(pred_ae)] = 1
+      y_hat_ae = ae_utils.to_one_hot(np.argmax(pred_ae), 10)
 
       print('\nEXAMPLE %d, y=%d, y_hat=%d, y_hat_ae=%d, conf=%0.3f' % (ii, yi_scalar, np.argmax(y_hat_clean), np.argmax(y_hat_ae), approx_conf(pred_clean)))
 
@@ -93,14 +92,15 @@ def main():
       if np.argmax(y_hat_clean) != yi_scalar or np.argmax(y_hat_ae) == yi_scalar:
         continue
 
-      stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max))
+      stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max, dir_sampler=dsamp))
       stats['Dataset'] = 'cifar10'
       stats['Example#'] = ii
       stats['Approx_conf'] = approx_conf(pred_clean)
       df_list.append(stats.copy())
+      pdb.set_trace() # TEMP
 
       print(' CORRESPONDING AE :')
-      stats_ae = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max))
+      stats_ae = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp))
       stats_ae['Dataset'] = 'cifar10-Adv-FGM-%0.2f' % eps
       stats_ae['Example#'] = ii
       stats['Approx_conf'] = approx_conf(pred_ae)
