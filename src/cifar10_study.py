@@ -66,7 +66,7 @@ def main():
     df_list = []  # stores intermediate results
 
     #for ii in range(X_test.shape[0]):
-    for ii in range(100):  # for now we only consider a subset of examples (saves time)
+    for ii in range(300):  # for now we only consider a subset of examples (saves time)
       xi = X_test[ii,...]
       yi_scalar = Y_test[ii]  # NOTE: whether this is one-hot or not depends on data source!
       yi_oh = ae_utils.to_one_hot(yi_scalar, 10)
@@ -97,7 +97,6 @@ def main():
       stats['Example#'] = ii
       stats['Approx_conf'] = approx_conf(pred_clean)
       df_list.append(stats.copy())
-      pdb.set_trace() # TEMP
 
       print(' CORRESPONDING AE :')
       stats_ae = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp))
