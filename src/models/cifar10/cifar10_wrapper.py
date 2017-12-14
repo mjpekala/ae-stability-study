@@ -29,7 +29,7 @@ class Cifar10(object):
   """ Wrapper around CIFAR-10 model.
   """
 
-  def __init__(self, sess, checkpoint_file_or_dir='./Weights/cifar10_tf/model.ckpt-961504'):
+  def __init__(self, sess, checkpoint_file_or_dir='./Weights/cifar10_tf/model.ckpt-970664'):
     # Note: the images are cropped prior to training.
     #       Hence, the non-standard CIFAR10 image sizes below.
     #
@@ -183,7 +183,7 @@ def _fgsm_attack(sess, model, x, y, eps, use_cleverhans=False):
 if __name__ == "__main__":
 
   with tf.Graph().as_default(), tf.Session() as sess:
-    model = Cifar10(sess, './Weights/cifar10_tf/model.ckpt-961504')
+    model = Cifar10(sess)
     eps = 0.05
 
     # test model on some data

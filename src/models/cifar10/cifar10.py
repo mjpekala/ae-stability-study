@@ -266,9 +266,11 @@ def inference(images):
   # tf.nn.sparse_softmax_cross_entropy_with_logits accepts the unscaled logits
   # and performs the softmax internally for efficiency.
   #
-  # MJP: changed "softmax_layer" to "linear_layer"
-  #with tf.variable_scope('linear_layer') as scope:
-  with tf.variable_scope('softmax_linear') as scope:
+  # MJP: changed "softmax_layer" to "linear_layer";  
+  # This is for cleverhans, which inspects the layer name to determine
+  # whether a softmax operation was applied.
+  #with tf.variable_scope('softmax_linear') as scope:
+  with tf.variable_scope('linear_layer') as scope:
     weights = _variable_with_weight_decay('weights', [192, NUM_CLASSES],
                                           stddev=1/192.0, wd=0.0)
     biases = _variable_on_cpu('biases', [NUM_CLASSES],
