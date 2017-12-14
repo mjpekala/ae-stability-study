@@ -25,19 +25,34 @@ def finite_mean(v):
     return np.mean(v[np.isfinite(v)])
 
 
-def to_one_hot(y_vec, n_classes):
+
+def to_one_hot(y, n_classes=None):
   """   
-    y_vec     : a numpy array of class labels (non-one-hot, obv.)
-    n_classes : the total # of classes 
+    y : One of:
+             * a numpy array of class labels (non-one-hot, obv.)
+             * a numpy matrix of predictions that should be made one-hot
+
+    n_classes : the total # of classes  (only needed if y is a vector)
   """
-  out = np.zeros((y_vec.size, n_classes), dtype=np.float32)
-  if np.isscalar(y_vec):
-    out[0,y_vec] = 1
+  if np.isscalar(y) or y.size == 1:
+    # case where y is scalar
+    # note that, even in this case, we return a 2d matrix
+    out = np.zeros((1,n_classes), dtype=np.float32)
+    out[0,y] = 1
+
+  elif y.ndim == 1:
+    # Case where y is a vector
+    out = np.zeros((y.size, n_classes), dtype=np.float32)
+    out[np.arange(y.size),y] = 1
+
   else:
-    for ii in range(y_vec.size):
-      out[ii,y_vec[ii]] = 1
+    # Case where y is a matrix
+    out = np.zeros(y.shape, dtype=np.float32)
+    for idx,vals in enumerate(y):
+      out[idx,np.argmax(vals)] = 1
 
   return out
+
 
 
 def smoothed_one_hot(y):
@@ -54,16 +69,6 @@ def smoothed_one_hot(y):
   y_smooth[np.argmax(y)] = mag_true
 
   return y_smooth
-
-
-
-def gaussian_vector(vec_shape):
-  """ Generates a (normalized) vector with iid gaussian entries
-
-    vec_shape : a tuple indicating the shape of the vector/tensor to be created.
-  """
-  rv = np.random.randn(*vec_shape) 
-  return rv / norm(rv.flatten(),2)
 
 
 
@@ -89,19 +94,56 @@ def get_info(sess, model, x, y=None):
     return pred[0,...]
 
 
+#-------------------------------------------------------------------------------
+# Helpers for random sampling
+#-------------------------------------------------------------------------------
+
+class RandomDirections:
+  def __init__(self, shape):
+    self._shape = tuple(shape)  # shape of a single direction vector
+    self.ortho_group = None     # ortogonal group O(\N); we lazily create
+
+
+  def gaussian_direction(self, n_samps=1):
+    if n_samps == 1:
+      shape_out = self._shape
+    else:
+      shape_out = (n_samps,) + self._shape
+    return np.random.randn(*shape_out)
+
+
+  def haar_direction(self, n_samps):
+    # creating this group is computationally expensive (for large dimensions)
+    # so we defer creating it until we are sure we need it.
+    if self.ortho_group is None:
+      self.ortho_group = ortho_group.rvs(dim=np.prod(self._shape))
+
+    if n_samps == 1:
+      row = np.random.choice(self.ortho_group.shape[0],1)
+      return np.reshape(self.ortho_group[row,:], shape=self._shape)
+    else:
+      m = self.ortho_group.shape[0]
+      rows = np.random.choice(m, min(m, n_samps), replace=False)
+      out = self.ortho_group[rows,:]
+      return np.reshape(out, (n_samps,) + self._shape)
+
+#-------------------------------------------------------------------------------
+
 
 def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1):
   """ Computes (approximately) the distance one needs to move along
       some direction in order for the CNN to change its decision.  
 
       x         : a single example/image with shape (rows x cols x channels)
-      y         : class label associated with x (scalar)
+      y         : class label associated with x, in one-hot encoding
+                  We only require one-hot so that we don't need a separate
+                  parameter indicating the number of classes.
       direction : the search direction; same shape as x
       d_max     : the maximum distance to move along direction (scalar)
       tol       : the maximum size of the interval around the change
   """
-
-  assert(np.isscalar(y))
+  assert(not np.isscalar(y))
+  y_scalar = np.argmax(y,axis=1)
 
   # normalize search direction
   direction = direction / norm(direction.ravel(),2)
@@ -122,27 +164,39 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
 
     preds = sess.run(model.output, feed_dict={model.x_tf : x_batch})
     y_hat = np.argmax(preds, axis=1)
-    if np.all(y_hat == y):
-      return d_max, np.Inf, None  # label never changed in given interval
+    if np.all(y_hat == y_scalar):
+      a,b = d_max, np.Inf  # label never changed in given interval
+      break
 
-    first_change = np.min(np.where(y_hat != y)[0])
+    first_change = np.min(np.where(y_hat != y_scalar)[0])
     assert(first_change > 0)
 
     # refine interval
     a = epsilon_vals[first_change-1]
     b = epsilon_vals[first_change]
 
-  return a, b, y_hat[first_change]
-
+  if np.isfinite(b):
+    # if a point was found, provide some additional info
+    y_new = y_hat[first_change]
+    pred, loss, _ = get_info(sess, model, x + b*direction, to_one_hot(y_new, y.size))
+    return a, b, y_new, loss
+  else:
+    # no point was found in the interval
+    return a, b, np.nan, np.nan
 
 
 
 def loss_function_stats(sess, model, x0, y0, d_max, 
-                        n_samp_d=30, k_vals=[2,5,10], verbose=True):
-  """ Computes various statistics related to the loss function in the viscinity of (x0,y0).
+                        n_samp_d=30, k_vals=[2,5,10], verbose=True, dir_sampler=None):
+  """ Computes various statistics related to the loss function in the viscinity of 
+      a single example (x0,y0).  
 
-  Returns a Pandas data frame with all of the individual results.
+        y0 : one-hot encoding of class label y
+
+      Returns: a Pandas data frame 
   """
+
+  assert(not np.isscalar(y0))
 
   # create a simple data structure to hold results
   #changed to a list of dictionaries of relevant pieces
@@ -172,55 +226,61 @@ def loss_function_stats(sess, model, x0, y0, d_max,
     def as_dataframe(self):
       return pd.DataFrame(self.data)
 
-    def append(self, direction_type, y, y_hat, boundary_distance, **kargs):
-      if not np.isscalar(y):
-        y = np.argmax(y)
+    def append(self, direction_type, y, boundary_distance, y_hat, delta_loss, **kargs):
+      assert(np.isscalar(y))
+      assert(np.isscalar(y_hat))
       # TODO: could check if boundary_distance is finite to avoid adding Inf to
       #       the table.  However, this is not necessarily an issue.
-      entry = {'direction_type' : direction_type, 'y' : y, 'y_hat' : y_hat, 'boundary_distance' : boundary_distance}
+      entry = {'direction_type' : direction_type, 'y' : y, 'y_hat' : y_hat, 'boundary_distance' : boundary_distance, 'delta_loss' : delta_loss}
       entry.update(kargs)
       self.data.append(entry)
 
   stats = Direction_Stats()
+  if dir_sampler is None:
+    dir_sampler = RandomDirections(x0.shape)
 
   #------------------------------
   # get some basic info about x
   #------------------------------
-  pred, loss, grad = get_info(sess, model, x0, y0)
-  y_hat = np.argmax(pred)
-  assert(y_hat == np.argmax(y0))
+  pred0, loss0, grad0 = get_info(sess, model, x0, y0)
+  assert(np.argmax(pred0) == np.argmax(y0))
 
   #------------------------------
   # distance in gradient direction
   #------------------------------
-  a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, grad, d_max)
-  stats.append('gradient', np.argmax(y0), y_new, (a+b)/2.)
-
-  a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, -grad, d_max)
-  stats.append('neg-gradient', np.argmax(y0), y_new, (a+b)/2.)
+  a,b,y_new,loss_new = distance_to_decision_boundary(sess, model, x0, y0, grad0, d_max)
+  stats.append('gradient', np.argmax(y0), (a+b)/2., y_new, loss_new-loss0)
 
   #------------------------------
-  # distance in random directions
+  # distance in -gradient direction
   #------------------------------
-  for jj in range(n_samp_d):
-    a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, gaussian_vector(grad.shape), d_max)
-    stats.append('gaussian', np.argmax(y0), y_new, (a+b)/2.)
+  a,b,y_new,loss_new = distance_to_decision_boundary(sess, model, x0, y0, -grad0, d_max)
+  stats.append('neg-gradient', np.argmax(y0), (a+b)/2., y_new, loss_new-loss0)
 
-  # MJP: this seemed to run very slowly for me...commented out temporarily
-  #for did, orth_dir in enumerate(ortho_group.rvs(dim=np.prod(grad.shape), size=n_samp_d)):
-  #  a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, orth_dir.reshape(grad.shape), d_max)
-  #  stats.append('ortho_group', np.argmax(y0), y_new, (a+b)/2, direction_id=did)
+  #------------------------------
+  # distance in random Gaussian directions
+  #------------------------------
+  for gv in dir_sampler.gaussian_direction(n_samp_d):
+    a, b, y_new, loss_new  = distance_to_decision_boundary(sess, model, x0, y0, gv, d_max)
+    stats.append('gaussian', np.argmax(y0), (a+b)/2., y_new, loss_new-loss0)
+
+  #------------------------------
+  # distance in random orthogonal directions
+  #------------------------------
+  #for idx, ov in enumerate(dir_sampler.haar_direction(n_samp_d)):
+  #  a, b, y_new = distance_to_decision_boundary(sess, model, x0, y0, ov, d_max)
+  #  stats.append('ortho_group', np.argmax(y0), (a+b)/2., y_new, loss_new-loss0, direction_id=idx)
 
   #------------------------------
   # distance in gaas directions
   # Note: instead of picking k=n_samp_d we could use some smaller k and draw convex samples from that...
   #------------------------------
   for k_idx, k in enumerate(k_vals):
-    Q = gaas(grad, k)
+    Q = gaas(grad0, k)
 
     for did, col in enumerate(Q.T): #first check different directions from subspace
-      a, b, y_new = distance_to_decision_boundary(sess, model, x0, y_hat, col.reshape(grad.shape), d_max)
-      stats.append('gaas', np.argmax(y0), y_new, (a+b)/2., direction_id=did, k=k)
+      a, b, y_new, loss_new = distance_to_decision_boundary(sess, model, x0, y0, col.reshape(x0.shape), d_max)
+      stats.append('gaas', np.argmax(y0), (a+b)/2., y_new, loss_new-loss0, direction_id=did, k=k)
 
     for jj in range(min(n_samp_d, k)):
       # create a convex combo of the q_i
@@ -230,14 +290,14 @@ def loss_function_stats(sess, model, x0, y0, d_max,
       q_dir = q_dir / norm(q_dir,2)        # back to unit norm
       q_dir = np.reshape(q_dir, x0.shape)
 
-      a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, q_dir, d_max)
-      stats.append('gaas_convex_combo', np.argmax(y0), y_new, (a+b)/2., k=k)
+      a,b,y_new,loss_new = distance_to_decision_boundary(sess, model, x0, y0, q_dir, d_max)
+      stats.append('gaas_convex_combo', np.argmax(y0), (a+b)/2., y_new, loss_new-loss0, k=k)
 
   if verbose:
     print("%s" % str(stats))
 
   df = stats.as_dataframe()
-  df['ell2_grad'] = norm(grad.ravel(), 2)
+  df['ell2_grad'] = norm(grad0.ravel(), 2)
   return df
 
 
@@ -250,18 +310,42 @@ class Tests(unittest.TestCase):
     #
     # TODO: look up any analytic result describing the rate 
     # and use this to set tol and dim...
-    tol = 1e-2
-    dim = (10000,)
+    tol = 1e-1
     n_trials = 100
     result = np.zeros((n_trials,))
+    rd = RandomDirections((10000,))
 
     for ii in range(n_trials):
-      a = gaussian_vector(dim)
-      b = gaussian_vector(dim)
-      result[ii] = np.dot(a,b)
+      a = rd.gaussian_direction();  a = a / norm(a.ravel(),2)
+      b = rd.gaussian_direction();  b = b / norm(b.ravel(),2)
+      result[ii] = np.abs(np.dot(a,b))
 
-    print(np.sum(result < tol)) # TEMP
     self.assertTrue(np.sum(result < tol) > (.7*n_trials))
+
+
+  def test_haar_vector(self):
+    # these directions should be orthogonal
+    n_samps = 100
+    rd = RandomDirections((100,))
+    samps = rd.haar_direction(n_samps)
+    ip = np.dot(samps, samps.T)
+    self.assertTrue(norm(ip - np.eye(n_samps,n_samps), 'fro') < 1e-8)
+
+
+  def test_to_one_hot(self):
+    # test scalar form
+    y = 3
+    y_oh = to_one_hot(y, 10)
+    self.assertTrue(y_oh[0,3] == 1)
+    self.assertTrue(np.sum(y_oh) == 1)
+
+    # test vector form
+    y = np.array([0,1,2,3,4,5])
+    y_oh = to_one_hot(y, 6)
+    self.assertTrue(np.all(y_oh == np.eye(6,6)))
+
+    # test matrix form
+    self.assertTrue(np.all(y_oh == to_one_hot(y_oh + 10)))
 
 
 if __name__ == "__main__":
