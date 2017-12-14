@@ -1,12 +1,7 @@
-""" Some utilities useful for our AE studies.
-
-  Example usage:
-
-    PYTHONPATH=./cleverhans python study_cifar10.py
-
+""" This module contains functions to support our AE analyses.
 """
 
-__author__ = "mjp"
+__author__ = "mjp,ef"
 __date__ = "dec, 2017"
 
 
@@ -23,6 +18,7 @@ from gaas import gaas
 
 
 def finite_mean(v):
+  "Returns the mean of the finite elements in v."
   if not np.any(np.isfinite(v)):
     return np.nan
   else:
@@ -142,9 +138,10 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
 
 
 def loss_function_stats(sess, model, x0, y0, d_max, 
-                        n_samp_d=30, k_vals=[2,5,10]):
+                        n_samp_d=30, k_vals=[2,5,10], verbose=True):
   """ Computes various statistics related to the loss function in the viscinity of (x0,y0).
-  returns a dictionary with the different stats
+
+  Returns a Pandas data frame with all of the individual results.
   """
 
   # create a simple data structure to hold results
@@ -157,10 +154,14 @@ def loss_function_stats(sess, model, x0, y0, d_max,
       df = self.as_dataframe()
       s = ""
 
+      if len(df) <= 0:
+        return s
+
       for dname in ['gradient', 'neg-gradient']:
         tmp = df.loc[df['direction_type'] == dname]
         assert(len(tmp)==1)
-        s += '  label first changes (%d->%d) along "%s" direction at distance %0.3f\n' % (tmp['y'], tmp['y_hat'], dname, tmp['boundary_distance'])
+        if np.all(np.isfinite(tmp['boundary_distance'])):
+          s += '  label first changes (%d->%d) along "%s" direction at distance %0.3f\n' % (tmp['y'], tmp['y_hat'], dname, tmp['boundary_distance'])
 
       for dname in ['gaussian', 'gaas']:
         tmp = df.loc[df['direction_type'] == dname]
@@ -232,10 +233,12 @@ def loss_function_stats(sess, model, x0, y0, d_max,
       a,b,y_new = distance_to_decision_boundary(sess, model, x0, y_hat, q_dir, d_max)
       stats.append('gaas_convex_combo', np.argmax(y0), y_new, (a+b)/2., k=k)
 
-  if True:
-    print("%s\n" % str(stats))
+  if verbose:
+    print("%s" % str(stats))
 
-  return stats.as_dataframe()
+  df = stats.as_dataframe()
+  df['ell2_grad'] = norm(grad.ravel(), 2)
+  return df
 
 
 #-------------------------------------------------------------------------------
