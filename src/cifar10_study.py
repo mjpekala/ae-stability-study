@@ -33,6 +33,7 @@ def approx_conf(v):
 def main():
   batch_size = 32       # CNN mini-batch size
   d_max = 100           # maximum distance to move in any one direction
+  eps = 0.05
 
   tf.set_random_seed(1099) 
 
@@ -44,7 +45,7 @@ def main():
   data_file = '/home/pekalmj1/Data/CIFAR10/cifar-10-batches-py/test_batch'
   X_test, Y_test = cifar10.load_cifar10_python(data_file)
 
-  f = np.load('./cifar10_fgsm_eps0.05.npz')  # created by cifar10_wrapper.py
+  f = np.load('./cifar10_fgsm_eps%0.2f.npz' % eps)  # created by cifar10_wrapper.py
   X_adv = f['x_fgsm']
 
   print(X_test.shape, X_adv.shape, Y_test.shape)
@@ -100,7 +101,7 @@ def main():
 
       print(' CORRESPONDING AE :')
       stats_ae = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max))
-      stats_ae['Dataset'] = 'cifar10-Adv-FGM'
+      stats_ae['Dataset'] = 'cifar10-Adv-FGM-%0.2f' % eps
       stats_ae['Example#'] = ii
       stats['Approx_conf'] = approx_conf(pred_ae)
       df_list.append(stats_ae.copy())
