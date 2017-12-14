@@ -66,7 +66,7 @@ def main():
 
     df_list = []
     #for ii in range(X_test.shape[0]):
-    for ii in range(1000):  # for now we only consider a subset of examples (saves time)
+    for ii in range(100):  # for now we only consider a subset of examples (saves time)
       xi = X_test[ii,...]
       yi_scalar = Y_test[ii]  # NOTE: whether this is one-hot or not depends on data source!
       yi_oh = ae_utils.to_one_hot(yi_scalar, 10)
@@ -98,40 +98,18 @@ def main():
       stats['Approx_conf'] = approx_conf(pred_clean)
       df_list.append(stats.copy())
 
-      print('   For AE:')
+      print(' CORRESPONDING AE :')
       stats_ae = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max))
-      stats_ae['Dataset'] = 'cifar10'
-      stats_ae['Example#'] = 'Adv-' + ii
+      stats_ae['Dataset'] = 'cifar10-Adv-FGM'
+      stats_ae['Example#'] = ii
       stats['Approx_conf'] = approx_conf(pred_ae)
       df_list.append(stats_ae.copy())
 
-      # store some results
-      # TODO: do not average out over all k for GAAS???
-      '''
-      confidence.append(approx_conf(pred_clean))
-      d_gauss_clean.append(np.nanmean(stats_clean.d_gauss))
-      d_gauss_ae.append(np.nanmean(stats_ae.d_gauss))
-      d_gaas_clean.append(np.nanmean(stats_clean.d_gaas))
-      d_gaas_ae.append(np.nanmean(stats_ae.d_gaas))
-      '''
   #--------------------------------------------------
   # save results
   #--------------------------------------------------
-  confidence = np.array(confidence)
-  d_gauss_clean = np.array(d_gauss_clean)
-  d_gauss_ae = np.array(d_gauss_ae)
-  d_gaas_clean = np.array(d_gaas_clean)
-  d_gaas_ae = np.array(d_gaas_ae)
-
   master_stats = pd.concat(df_list)
-  master_stats.to_pickle('cifar_stats_df')
-  '''
-  savemat('cifar10_analysis.mat', {'conf': confidence,
-                                   'dist_gauss_clean' : d_gauss_clean,
-                                   'dist_gauss_ae' : d_gauss_ae,
-                                   'dist_gaas_clean' : d_gaas_clean,
-                                   'dist_gaas_ae' : d_gaas_ae})
-  '''
+  master_stats.to_pickle('cifar10_stats_df.pkl')
 
 
 if __name__ == "__main__":
