@@ -28,6 +28,7 @@ import ae_utils
 
 def approx_conf(v):
   'a crude measure of "confidence"'
+  # TODO: normalize?? (e.g. apply softmax?)
   values = np.sort(v)
   return values[-1] - values[-2]
 
