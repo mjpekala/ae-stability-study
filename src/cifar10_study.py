@@ -9,7 +9,8 @@ __author__ = "mjp,ef"
 __date__ = "december, 2017"
 
 
-import time
+import sys, time, os
+import h5py
 
 import numpy as np
 import pdb
@@ -33,84 +34,91 @@ def approx_conf(v):
   return values[-1] - values[-2]
 
 
-def main():
-  batch_size = 32       # CNN mini-batch size
-  d_max = 100           # maximum distance to move in any one direction
-  eps = 0.05
 
+
+def main():
+  """ Main processing loop.
+  """
+
+  batch_size = 32       # CNN mini-batch size
+  d_max = 20            # maximum distance to move in any one direction
   tf.set_random_seed(1099) 
 
-  #--------------------------------------------------
-  # Load clean and AE data.
-  # In the future we perhaps might load muliple different AE data sets...
-  #--------------------------------------------------
-  #_, _, X_test, Y_test = cifar10.data_cifar10()
-  data_file = '/home/pekalmj1/Data/CIFAR10/cifar-10-batches-py/test_batch'
-  X_test, Y_test = cifar10.load_cifar10_python(data_file)
+  # TODO: smoothing one-hot class label vectors???
 
-  f = np.load('./cifar10_fgsm_eps%0.2f.npz' % eps)  # created by cifar10_wrapper.py
-  X_adv = f['x_fgsm']
+  with h5py.File('cifar10_AE.h5', 'r') as h5:
+    # original/clean data
+    x = h5['cifar10']['x'].value
+    y = h5['cifar10']['y'].value
+    all_ae_datasets = [x for x in h5['cifar10'] if x.startswith('FGM')]  # for now, we only consider FGM
 
-  print(X_test.shape, X_adv.shape, Y_test.shape)
-  assert(np.all(X_test.shape == X_adv.shape))
+    print('x min/max: %0.2f / %0.2f' % (np.min(x), np.max(x)))
+    
+    dsamp = ae_utils.RandomDirections(x[0,...].shape)   # sampling strategies
+    df_list = []                                        # stores intermediate results
 
-  #--------------------------------------------------
-  # Decision boundary analysis
-  #--------------------------------------------------
-  config = tf.ConfigProto(allow_soft_placement=True,log_device_placement=True)
-  with tf.Graph().as_default(), tf.Session(config=config) as sess:
-    #keras.backend.set_image_dim_ordering('tf')
-    #keras.backend.set_session(sess)
-    model = cifar10.Cifar10(sess)
 
-    dsamp = ae_utils.RandomDirections(X_test[0,...].shape)
-    df_list = []  # stores intermediate results
+    #config = tf.ConfigProto(allow_soft_placement=True,log_device_placement=True)
+    config = tf.ConfigProto(allow_soft_placement=True)
+    with tf.Graph().as_default(), tf.Session(config=config) as sess:
+      model = cifar10.Cifar10(sess)
 
-    #for ii in range(X_test.shape[0]):
-    for ii in range(1500):  # for now we only consider a subset of examples (saves time)
-      xi = X_test[ii,...]
-      yi_scalar = Y_test[ii]  # NOTE: whether this is one-hot or not depends on data source!
-      yi_oh = ae_utils.to_one_hot(yi_scalar, 10)
-      xi_adv = X_adv[ii,...]
+      for ii in range(10):  # TEMP: process only a subset for now
+        xi = x[ii,...]
+        yi_scalar = y[ii] 
+        yi_oh = ae_utils.to_one_hot(yi_scalar, 10)
 
-      # use the CNN to predict label for clean and AE
-      pred_clean = ae_utils.get_info(sess, model, xi)
-      y_hat_clean = ae_utils.to_one_hot(np.argmax(pred_clean), 10)
+        # Use the CNN to predict label.
+        # Presumably these estimates should match the one in the database
+        # (assuming the same network...) but we recompute anyway...
+        pred_clean = ae_utils.get_info(sess, model, xi)
+        y_hat_clean = ae_utils.to_one_hot(np.argmax(pred_clean), 10)
 
-      pred_ae = ae_utils.get_info(sess, model, xi_adv)
-      y_hat_ae = ae_utils.to_one_hot(np.argmax(pred_ae), 10)
+        print('-----------------------------------------------------------------------------------')
+        print('EXAMPLE %d, y=%d, y_hat=%d, conf=%0.3f' % (ii, yi_scalar, np.argmax(pred_clean), approx_conf(pred_clean)))
 
-      print('\nEXAMPLE %d, y=%d, y_hat=%d, y_hat_ae=%d, conf=%0.3f' % (ii, yi_scalar, np.argmax(y_hat_clean), np.argmax(y_hat_ae), approx_conf(pred_clean)))
+        # If the original example was misclassified, we ignore this example
+        # since the notion of AE makes less sense.
+        if not yi_scalar == np.argmax(pred_clean):
+          continue
 
-      # OPTIONAL: smoothing one-hot class label vectors
-      if 0:
-        y_hat_clean = ae_utils.smoothed_one_hot(y_hat_clean)
-        y_hat_ae = ae_utils.smoothed_one_hot(y_hat_ae)
+        # sample directions
+        stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max, dir_sampler=dsamp))
+        stats['Dataset'] = 'cifar10'
+        stats['Example#'] = ii
+        stats['Approx_conf'] = approx_conf(pred_clean)
+        df_list.append(stats.copy())
 
-      # for now, we only care about examples where:
-      #  1.  The network correctly classified the clean example and
-      #  2.  The AE attack was successful
-      if np.argmax(y_hat_clean) != yi_scalar or np.argmax(y_hat_ae) == yi_scalar:
-        continue
+        # look at the corresponding AE
+        for ae_dataset in all_ae_datasets:
+          xi_adv = h5['cifar10'][ae_dataset]['x'].value[ii,...]
 
-      stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max, dir_sampler=dsamp))
-      stats['Dataset'] = 'cifar10'
-      stats['Example#'] = ii
-      stats['Approx_conf'] = approx_conf(pred_clean)
-      df_list.append(stats.copy())
+          pred_ae = ae_utils.get_info(sess, model, xi_adv)
+          y_hat_ae = ae_utils.to_one_hot(np.argmax(pred_ae), 10)
 
-      print(' CORRESPONDING AE :')
-      stats_ae = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp))
-      stats_ae['Dataset'] = 'cifar10-Adv-FGM-%0.2f' % eps
-      stats_ae['Example#'] = ii
-      stats['Approx_conf'] = approx_conf(pred_ae)
-      df_list.append(stats_ae.copy())
+          if 0:
+            y_hat_clean = ae_utils.smoothed_one_hot(y_hat_clean)
+            y_hat_ae = ae_utils.smoothed_one_hot(y_hat_ae)
+
+          # for now, we only care about **successful** AE
+          if np.argmax(y_hat_ae) == yi_scalar:
+            continue
+
+          print(' %s AE :' % ae_dataset)
+          stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp))
+          stats['Dataset'] = ae_dataset
+          stats['Example#'] = ii
+          stats['Approx_conf'] = approx_conf(pred_ae)
+          df_list.append(stats.copy())
 
   #--------------------------------------------------
   # save results
   #--------------------------------------------------
   master_stats = pd.concat(df_list)
   master_stats.to_pickle('cifar10_stats_df.pkl')
+
+
+
 
 
 if __name__ == "__main__":
