@@ -1,0 +1,26 @@
+Guide to Dataframe output from AE Study 1
+
+Dataset - string - indicates the image classification problem used, possibly including a further string indicating the AEs generated.
+    Will be the same for all examples from that data.
+
+Example# - int - indicates the example image from the dataset that is being looked at.  Will be the same for all perturbations of that example.
+
+Approx_conf - float - crude measure of the model's confidence in its label, obtained by the difference in top 2 class output.  If this is low, we might not expect meaningful AE ideas.
+
+direction_type - string - category for the type of perturbation.
+    Possible values:  gradient, neg-gradient, gaussian, ortho_group, gaas, gaas_convex_combo
+
+direction_id - int - ordinal number of direction, for cases where multiple random directions are tried
+
+y - int - the assigned label of the unperturbed image.  We only look at examples where this is output by the model.
+
+y_hat - int - the new label of the perturbed image in the given direction.  If successful, should be different from y
+
+boundary_distance - float - the first stepped distance in the given direction that changes the class label.
+    If no class change within the maximum moved distance, may be inf (which we can replace with some large value for analysis)
+
+delta_loss - float - the change in loss along the direction, computed as the loss at the point where the decision changes minus the loss at the starting image (fixed)
+
+k - int - candidate dimension for the adversarial subspace.
+
+ell2_grad - float - norm of the gradient at x (currently L2-norm)
