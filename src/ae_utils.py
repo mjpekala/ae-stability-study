@@ -267,9 +267,9 @@ def loss_function_stats(sess, model, x0, y0, d_max,
   #------------------------------
   # distance in random orthogonal directions
   #------------------------------
-  for idx, ov in enumerate(dir_sampler.haar_direction(n_samp_d)):
-    a, b, y_new, loss_new = distance_to_decision_boundary(sess, model, x0, y0, ov, d_max)
-    stats.append('ortho_group', np.argmax(y0), (a+b)/2., y_new, loss_new-loss0, direction_id=idx)
+  #for idx, ov in enumerate(dir_sampler.haar_direction(n_samp_d)):
+  #  a, b, y_new, loss_new = distance_to_decision_boundary(sess, model, x0, y0, ov, d_max)
+  #  stats.append('ortho_group', np.argmax(y0), (a+b)/2., y_new, loss_new-loss0, direction_id=idx)
 
   #------------------------------
   # distance in gaas directions
