@@ -36,7 +36,8 @@ cifar10-ae :
 	python -m models.cifar10.cifar10_wrapper
 
 
-# Analysis of AE generated previously/above
+# Analysis of AE generated previously/above.
+# This can also take awhile, you may want to nohup this target as well.
 cifar10-study :
 	python cifar10_study.py
 
