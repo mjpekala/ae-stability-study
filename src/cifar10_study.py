@@ -63,7 +63,7 @@ def main():
     with tf.Graph().as_default(), tf.Session(config=config) as sess:
       model = cifar10.Cifar10(sess)
 
-      for ii in range(10):  # TEMP: process only a subset for now
+      for ii in range(1500):  # TEMP: process only a subset for now
         xi = x[ii,...]
         yi_scalar = y[ii] 
         yi_oh = ae_utils.to_one_hot(yi_scalar, 10)
