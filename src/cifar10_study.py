@@ -91,6 +91,8 @@ def main():
 
         # look at the corresponding AE
         for ae_dataset in all_ae_datasets:
+          print(' %s AE:' % ae_dataset)
+
           xi_adv = h5['cifar10'][ae_dataset]['x'].value[ii,...]
 
           pred_ae = ae_utils.get_info(sess, model, xi_adv)
@@ -102,9 +104,9 @@ def main():
 
           # for now, we only care about **successful** AE
           if np.argmax(y_hat_ae) == yi_scalar:
+            print('   attack unsuccessful, skipping...\n')
             continue
 
-          print(' %s AE :' % ae_dataset)
           stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp))
           stats['Dataset'] = ae_dataset
           stats['Example#'] = ii
