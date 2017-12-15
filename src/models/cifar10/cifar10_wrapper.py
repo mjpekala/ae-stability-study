@@ -12,7 +12,7 @@ __author__ = "mjp"
 __date__ = 'december, 2017'
 
 
-import os
+import sys, os
 import pdb
 
 import numpy as np
@@ -182,15 +182,19 @@ def _fgsm_attack(sess, model, x, y, eps, use_cleverhans=False):
 
 if __name__ == "__main__":
 
+  eps = 0.1 #0.05
+
   with tf.Graph().as_default(), tf.Session() as sess:
     model = Cifar10(sess)
-    eps = 0.05
 
     # test model on some data
     #  (data from: https://www.cs.toronto.edu/~kriz/cifar.html)
     #
     test_data_file = '/home/pekalmj1/Data/CIFAR10/cifar-10-batches-py/test_batch'
     x,y = load_cifar10_python(test_data_file, preprocess=True)
+    print('[cifar10_wrapper]: x min/max:  %0.2f / %0.2f' % (np.min(x), np.max(x)))
+    print('[cifar10_wrapper]: x mu/sigma: %0.2f / %0.2f' % (np.mean(x), np.std(x)))
+    print('[cifar10_wrapper]: using epsilon: %0.2f' % eps)
 
     # also try an adversarial attack
     y_hat, acc = _eval_model(sess, model, x, y)
