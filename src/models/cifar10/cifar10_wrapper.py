@@ -218,6 +218,7 @@ if __name__ == "__main__":
         grp2 = grp.create_group('FGM-%0.2f' % eps)
         grp2['x'] = x_adv
         grp2['y_hat'] = y_hat_adv 
+        grp2['epsilon'] = eps
 
 
   # The following is optional - just shows how to access file contents.
