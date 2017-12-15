@@ -14,6 +14,7 @@ __date__ = 'december, 2017'
 
 import sys, os
 import pdb
+import h5py
 
 import numpy as np
 
@@ -181,30 +182,50 @@ def _fgsm_attack(sess, model, x, y, eps, use_cleverhans=False):
 
 
 if __name__ == "__main__":
-
-  eps = 0.1 #0.05
+  epsilon_values = [.02, .05, .1, .2]
+  output_file = 'cifar10_AE.h5'
 
   with tf.Graph().as_default(), tf.Session() as sess:
     model = Cifar10(sess)
 
-    # test model on some data
+    #--------------------------------------------------
+    # Evaluate on clean data.
     #  (data from: https://www.cs.toronto.edu/~kriz/cifar.html)
-    #
+    #--------------------------------------------------
     test_data_file = '/home/pekalmj1/Data/CIFAR10/cifar-10-batches-py/test_batch'
     x,y = load_cifar10_python(test_data_file, preprocess=True)
     print('[cifar10_wrapper]: x min/max:  %0.2f / %0.2f' % (np.min(x), np.max(x)))
     print('[cifar10_wrapper]: x mu/sigma: %0.2f / %0.2f' % (np.mean(x), np.std(x)))
-    print('[cifar10_wrapper]: using epsilon: %0.2f' % eps)
+    print('[cifar10_wrapper]: using epsilon: ',epsilon_values)
 
-    # also try an adversarial attack
     y_hat, acc = _eval_model(sess, model, x, y)
-    print('[cifar10_wrapper]: network accuracy on CIFAR10 test (%d examples): %0.2f%%' % (y_hat.size,acc))
+    print('[cifar10_wrapper]: network accuracy on original/clean CIFAR10 (%d examples): %0.2f%%' % (y_hat.size,acc))
 
-    x_adv = _fgsm_attack(sess, model, x, y, eps=eps)
-    y_hat_adv, acc_adv = _eval_model(sess, model, x_adv, y)
-    print('[cifar10_wrapper]: network accuracy on FGSM CIFAR10 (%d examples): %0.2f%%' % (y_hat_adv.size, acc_adv))
+    with h5py.File(output_file, 'w') as h5:
+      grp = h5.create_group('cifar10')
+      grp['x'] = x
+      grp['y'] = y
+      grp['y_hat'] = y_hat  # estimates on clean data
 
-    # save images for subsequent analysis
-    out_fn = 'cifar10_fgsm_eps%0.2f' % eps
-    np.savez(out_fn, x=x, y=y, x_fgsm=x_adv)
-    print('[cifar10_wrapper]: results saved to file: "%s"\n' % out_fn)
+      #----------------------------------------
+      # Fast gradient sign attacks
+      #----------------------------------------
+      for eps in epsilon_values:
+        x_adv = _fgsm_attack(sess, model, x, y, eps=eps)
+        y_hat_adv, acc_adv = _eval_model(sess, model, x_adv, y)
+        print('[cifar10_wrapper]: network accuracy on FGSM(eps=%0.2f) CIFAR10: %0.2f%%' % (eps, acc_adv))
+
+        grp2 = grp.create_group('FGM-%0.2f' % eps)
+        grp2['x'] = x_adv
+        grp2['y_hat'] = y_hat_adv 
+
+
+  # The following is optional - just shows how to access file contents.
+  with h5py.File(output_file, 'r') as h5:
+    y_true = h5['cifar10']['y'].value
+
+    for name in h5['cifar10']:
+      if name.startswith('FGM'):
+        y_hat = h5['cifar10'][name]['y_hat'].value
+        acc_adv = 100. * np.sum(y_hat == y_true) / y_hat.size
+        print('[cifar10_wrapper]: network accuracy on %s: %0.2f%%' % (name, acc_adv))
