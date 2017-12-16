@@ -182,7 +182,7 @@ def _fgsm_attack(sess, model, x, y, eps, use_cleverhans=False):
 
 
 if __name__ == "__main__":
-  epsilon_values = [.02, .05, .1, .2]
+  epsilon_values = [.02, .03, .05, .1, .15, .2, .25]
   output_file = 'cifar10_AE.h5'
 
   with tf.Graph().as_default(), tf.Session() as sess:
