@@ -77,6 +77,7 @@ def main():
 
         print('-----------------------------------------------------------------------------------')
         print('EXAMPLE %d, y=%d, y_hat=%d, conf=%0.3f' % (ii, yi_scalar, np.argmax(pred_clean), approx_conf(pred_clean)))
+        sys.stdout.flush()
 
         # If the original example was misclassified, we ignore this example
         # since the notion of AE makes less sense.
