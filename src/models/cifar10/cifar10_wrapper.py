@@ -64,7 +64,7 @@ class Cifar10(object):
     if not os.path.isdir(checkpoint_file_or_dir):
       saver.restore(sess, checkpoint_file_or_dir)
     else:
-      ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+      ckpt = tf.train.get_checkpoint_state(checkpoint_file_or_dir)
       saver.restore(sess, ckpt.model_checkpoint_path)
 
 
@@ -184,19 +184,22 @@ def _fgsm_attack(sess, model, x, y, eps, use_cleverhans=False):
 if __name__ == "__main__":
   epsilon_values = [.02, .03, .05, .1, .15, .2, .25]
   output_file = 'cifar10_AE.h5'
+  #cnn_weights = './Weights/cifar10_tf/model.ckpt-995345'
+  cnn_weights = './Weights'
+  test_data_file = os.path.expanduser('~/Data/CIFAR10/cifar-10-batches-py/test_batch')
 
   with tf.Graph().as_default(), tf.Session() as sess:
-    model = Cifar10(sess)
+    model = Cifar10(sess, cnn_weights)
 
     #--------------------------------------------------
     # Evaluate on clean data.
     #  (data from: https://www.cs.toronto.edu/~kriz/cifar.html)
     #--------------------------------------------------
-    test_data_file = '/home/pekalmj1/Data/CIFAR10/cifar-10-batches-py/test_batch'
     x,y = load_cifar10_python(test_data_file, preprocess=True)
-    print('[cifar10_wrapper]: x min/max:  %0.2f / %0.2f' % (np.min(x), np.max(x)))
-    print('[cifar10_wrapper]: x mu/sigma: %0.2f / %0.2f' % (np.mean(x), np.std(x)))
-    print('[cifar10_wrapper]: using epsilon: ',epsilon_values)
+    print('[cifar10_wrapper]: x min/max:        %0.2f / %0.2f' % (np.min(x), np.max(x)))
+    print('[cifar10_wrapper]: x mu/sigma:       %0.2f / %0.2f' % (np.mean(x), np.std(x)))
+    print('[cifar10_wrapper]: using epsilon:  ', epsilon_values)
+    print('[cifar10_wrapper]: using tensorflow: ', tf.__version__)
 
     y_hat, acc = _eval_model(sess, model, x, y)
     print('[cifar10_wrapper]: network accuracy on original/clean CIFAR10 (%d examples): %0.2f%%' % (y_hat.size,acc))
@@ -220,6 +223,7 @@ if __name__ == "__main__":
         grp2['y_hat'] = y_hat_adv 
         grp2['epsilon'] = eps
 
+  print('[cifar10_wrapper]: results saved to file "%s"' % output_file)
 
   # The following is optional - just shows how to access file contents.
   with h5py.File(output_file, 'r') as h5:
@@ -229,4 +233,4 @@ if __name__ == "__main__":
       if name.startswith('FGM'):
         y_hat = h5['cifar10'][name]['y_hat'].value
         acc_adv = 100. * np.sum(y_hat == y_true) / y_hat.size
-        print('[cifar10_wrapper]: network accuracy on %s: %0.2f%%' % (name, acc_adv))
+        print('[cifar10_wrapper]: network accuracy on %s (from saved file): %0.2f%%' % (name, acc_adv))

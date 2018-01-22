@@ -20,12 +20,15 @@ default :
 # ./Weights for use by other scripts.
 #
 # Note: this takes a long time; you may want to do:
-#     nohup make cifar10-train
+#     nohup make cifar10-train &
 # and work on another project for awhile.
 #
 # We put training on GPU 1 to be polite;
 # change/remove CUDA_VISIBLE_DEVICES if you don't want this
 # (e.g. if you have only one GPU on your system).
+# 
+# After this runs, you'll need to manually copy the trained weights
+# from /tmp/cifar10_train into ./Weights
 #
 cifar10-train :
 	CUDA_VISIBLE_DEVICES="1" python -m models.cifar10.cifar10_train
@@ -33,13 +36,13 @@ cifar10-train :
 
 # Generates AE for cifar-10
 cifar10-ae :
-	python -m models.cifar10.cifar10_wrapper
+	CUDA_VISIBLE_DEVICES="1" python -m models.cifar10.cifar10_wrapper
 
 
 # Analysis of AE generated previously/above.
 # This can also take awhile, you may want to nohup this target as well.
 cifar10-study :
-	python cifar10_study.py
+	CUDA_VISIBLE_DEVICES="1' python cifar10_study.py
 
 
 
