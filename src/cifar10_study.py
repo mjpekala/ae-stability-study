@@ -43,7 +43,7 @@ def main():
   batch_size = 32             # CNN mini-batch size
   d_max = 20                  # maximum distance to move in any one direction
   tf.set_random_seed(1099) 
-  k_vals_for_gaas = [2,3,4,5,10,20,50,100]
+  k_vals_for_gaas = [2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] # see Evan's email 01/22/2018
 
   # TODO: smoothing one-hot class label vectors???
 
@@ -109,7 +109,7 @@ def main():
             print('   attack unsuccessful, skipping...\n')
             continue
 
-          stats = ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp)
+          stats = ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp, k_vals=k_vals_for_gaas)
           stats['Dataset'] = ae_dataset
           stats['Example#'] = ii
           stats['Approx_conf'] = approx_conf(pred_ae)
