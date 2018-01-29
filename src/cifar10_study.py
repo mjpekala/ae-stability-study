@@ -40,9 +40,10 @@ def main():
   """ Main processing loop.
   """
 
-  batch_size = 32       # CNN mini-batch size
-  d_max = 20            # maximum distance to move in any one direction
+  batch_size = 32             # CNN mini-batch size
+  d_max = 20                  # maximum distance to move in any one direction
   tf.set_random_seed(1099) 
+  k_vals_for_gaas = [2,3,4,5,10,20,50,100]
 
   # TODO: smoothing one-hot class label vectors???
 
@@ -61,7 +62,7 @@ def main():
     #config = tf.ConfigProto(allow_soft_placement=True,log_device_placement=True)
     config = tf.ConfigProto(allow_soft_placement=True)
     with tf.Graph().as_default(), tf.Session(config=config) as sess:
-      model = cifar10.Cifar10(sess)
+      model = cifar10.Cifar10(sess, './Weights')
 
       for ii in range(1500):  # TEMP: process only a subset for now
         xi = x[ii,...]
@@ -76,6 +77,7 @@ def main():
 
         print('-----------------------------------------------------------------------------------')
         print('EXAMPLE %d, y=%d, y_hat=%d, conf=%0.3f' % (ii, yi_scalar, np.argmax(pred_clean), approx_conf(pred_clean)))
+        sys.stdout.flush()
 
         # If the original example was misclassified, we ignore this example
         # since the notion of AE makes less sense.
@@ -83,7 +85,7 @@ def main():
           continue
 
         # sample directions
-        stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max, dir_sampler=dsamp))
+        stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max, dir_sampler=dsamp, k_vals=k_vals_for_gaas))
         stats['Dataset'] = 'cifar10'
         stats['Example#'] = ii
         stats['Approx_conf'] = approx_conf(pred_clean)
@@ -107,7 +109,7 @@ def main():
             print('   attack unsuccessful, skipping...\n')
             continue
 
-          stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp))
+          stats = ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp)
           stats['Dataset'] = ae_dataset
           stats['Example#'] = ii
           stats['Approx_conf'] = approx_conf(pred_ae)

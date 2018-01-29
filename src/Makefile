@@ -15,9 +15,11 @@ default :
 #-------------------------------------------------------------------------------
 
 # Trains the CIFAR-10 tensorflow example model.
-# After training is complete, move/copy the 
-# desired checkpoint file from /tmp/cifar10_data to
-# ./Weights for use by other scripts.
+# ** 
+#   After training is complete, move/copy the 
+#   desired checkpoint file from /tmp/cifar10_data to
+#   ./Weights for use by other scripts.
+# **
 #
 # Note: this takes a long time; you may want to do:
 #     nohup make cifar10-train &
@@ -27,8 +29,10 @@ default :
 # change/remove CUDA_VISIBLE_DEVICES if you don't want this
 # (e.g. if you have only one GPU on your system).
 # 
-# After this runs, you'll need to manually copy the trained weights
-# from /tmp/cifar10_train into ./Weights
+# Note that this CIFAR model significantly out-performs
+# the sample CNN that comes with CH (should get ~81% acc
+# on test data with this model).  So not state-of-the-art
+# but decent performance.
 #
 cifar10-train :
 	CUDA_VISIBLE_DEVICES="1" python -m models.cifar10.cifar10_train
@@ -42,7 +46,7 @@ cifar10-ae :
 # Analysis of AE generated previously/above.
 # This can also take awhile, you may want to nohup this target as well.
 cifar10-study :
-	CUDA_VISIBLE_DEVICES="1' python cifar10_study.py
+	CUDA_VISIBLE_DEVICES="1" python cifar10_study.py
 
 
 
