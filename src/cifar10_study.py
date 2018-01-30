@@ -27,13 +27,16 @@ import ae_utils
 
 
 
+K_VALS_FOR_GAAS = [2, 5, 10, 20, 50]
+#   [2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] # see Evan's email 01/22/2018
+
+
+
 def approx_conf(v):
   'a crude measure of "confidence"'
   # TODO: normalize?? (e.g. apply softmax?)
   values = np.sort(v)
   return values[-1] - values[-2]
-
-
 
 
 def main():
@@ -43,15 +46,15 @@ def main():
   batch_size = 32             # CNN mini-batch size
   d_max = 20                  # maximum distance to move in any one direction
   tf.set_random_seed(1099) 
-  k_vals_for_gaas = [2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] # see Evan's email 01/22/2018
 
   # TODO: smoothing one-hot class label vectors???
 
-  with h5py.File('cifar10_AE.h5', 'r') as h5:
+  with h5py.File('cifar10_AE_CH.h5', 'r') as h5:
     # original/clean data
     x = h5['cifar10']['x'].value
     y = h5['cifar10']['y'].value
-    all_ae_datasets = [x for x in h5['cifar10'] if x.startswith('FGM')]  # for now, we only consider FGM
+    all_ae_datasets = [x for x in h5['cifar10'] 
+                       if x.startswith('FGM') or x.startswith('I-FGM')]  # UPDATE as needed for new AE!
 
     print('x min/max: %0.2f / %0.2f' % (np.min(x), np.max(x)))
     
@@ -59,12 +62,12 @@ def main():
     df_list = []                                        # stores intermediate results
 
 
-    #config = tf.ConfigProto(allow_soft_placement=True,log_device_placement=True)
-    config = tf.ConfigProto(allow_soft_placement=True)
+    config = tf.ConfigProto(allow_soft_placement=True)  # log_device_placement=True
     with tf.Graph().as_default(), tf.Session(config=config) as sess:
       model = cifar10.Cifar10(sess, './Weights')
 
-      for ii in range(1500):  # TEMP: process only a subset for now
+      #for ii in range(1500):  # TEMP: process only a subset for now
+      for ii in range(10): # TEMP TEMP TEMP
         xi = x[ii,...]
         yi_scalar = y[ii] 
         yi_oh = ae_utils.to_one_hot(yi_scalar, 10)
@@ -85,7 +88,7 @@ def main():
           continue
 
         # sample directions
-        stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max, dir_sampler=dsamp, k_vals=k_vals_for_gaas))
+        stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max, dir_sampler=dsamp, k_vals=K_VALS_FOR_GAAS))
         stats['Dataset'] = 'cifar10'
         stats['Example#'] = ii
         stats['Approx_conf'] = approx_conf(pred_clean)
@@ -109,18 +112,18 @@ def main():
             print('   attack unsuccessful, skipping...\n')
             continue
 
-          stats = ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp, k_vals=k_vals_for_gaas)
+          stats = ae_utils.loss_function_stats(sess, model, xi_adv, y_hat_ae, d_max, dir_sampler=dsamp, k_vals=K_VALS_FOR_GAAS)
           stats['Dataset'] = ae_dataset
           stats['Example#'] = ii
           stats['Approx_conf'] = approx_conf(pred_ae)
           df_list.append(stats.copy())
 
+
   #--------------------------------------------------
-  # save results
+  # save results to file for subsequent analysis
   #--------------------------------------------------
   master_stats = pd.concat(df_list)
-  master_stats.to_pickle('cifar10_stats_df.pkl')
-
+  master_stats.to_pickle('cifar10_stats_df_CH.pkl')
 
 
 
