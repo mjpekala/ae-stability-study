@@ -5,10 +5,10 @@ __author__ = "mjp,ef"
 __date__ = "dec, 2017"
 
 
+import math, random
 import numpy as np
-from scipy.stats import ortho_group
 from numpy.linalg import norm
-import random
+from scipy.stats import ortho_group
 import pandas as pd
 
 import pdb, unittest
