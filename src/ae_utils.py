@@ -17,6 +17,33 @@ from gaas import gaas
 
 
 
+#-------------------------------------------------------------------------------
+# Generic helper/utility functions
+#-------------------------------------------------------------------------------
+
+def splitpath(full_path):
+  """
+  Splits a path into all possible pieces (vs. just head/tail).
+  """
+  head, tail = os.path.split(full_path)
+
+  result = [tail]
+
+  while len(head) > 0:
+    [head, tail] = os.path.split(head)
+    result.append(tail)
+
+  result = [x for x in result if len(x)]
+  return result[::-1]
+
+
+
+def makedirs_if_needed(dirname):
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+        
+
 def finite_mean(v):
   "Returns the mean of the finite elements in v."
   if not np.any(np.isfinite(v)):
@@ -25,6 +52,11 @@ def finite_mean(v):
     return np.mean(v[np.isfinite(v)])
 
 
+
+
+#-------------------------------------------------------------------------------
+# Functions for dealing with Tensorflow and/or network models
+#-------------------------------------------------------------------------------
 
 def to_one_hot(y, n_classes=None):
   """   
@@ -94,8 +126,52 @@ def get_info(sess, model, x, y=None):
     return pred[0,...]
 
 
+
+def run_in_batches(sess, x_tf, y_tf, output_tf, x_in, y_in, batch_size):
+    """ 
+     Runs data through a CNN one batch at a time; gathers all results
+     together into a single tensor.  This assumes the output of each
+     batch is tensor-like.
+
+        sess      : the tensorflow session to use
+        x_tf      : placeholder for input x
+        y_tf      : placeholder for input y
+        output_tf : placeholder for CNN output
+        x_in      : data set to process (numpy tensor)
+        y_in      : associated labels (numpy, one-hot encoding)
+        batch_size : minibatch size (scalar)
+
+    """
+    n_examples = x_in.shape[0]  # total num. of objects to feed
+
+    # determine how many mini-batches are required
+    nb_batches = int(math.ceil(float(n_examples) / batch_size))
+    assert nb_batches * batch_size >= n_examples
+
+    out = []
+    with sess.as_default():
+        for start in np.arange(0, n_examples, batch_size):
+            # the min() stuff here is to handle the last batch, which may be partial
+            end = min(n_examples, start + batch_size)
+            start_actual = min(start, n_examples - batch_size)
+
+            feed_dict = {x_tf : x_in[start_actual:end], y_tf : y_in[start_actual:end]}
+            output_i = sess.run(output_tf, feed_dict=feed_dict)
+
+            # the slice is to avoid any extra stuff in last mini-batch,
+            # which might not be entirely "full"
+            skip = start - start_actual
+            output_i = output_i[skip:]
+            out.append(output_i)
+
+    out = np.concatenate(out, axis=0)
+    assert(out.shape[0] == n_examples)
+    return out
+
+
+
 #-------------------------------------------------------------------------------
-# Helpers for random sampling
+# Functions for sampling
 #-------------------------------------------------------------------------------
 
 class RandomDirections:
@@ -127,6 +203,10 @@ class RandomDirections:
       out = self.ortho_group[rows,:]
       return np.reshape(out, (n_samps,) + self._shape)
 
+
+
+#-------------------------------------------------------------------------------
+# Functions related to analysis of AE
 #-------------------------------------------------------------------------------
 
 
