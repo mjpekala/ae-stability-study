@@ -117,12 +117,12 @@ def get_info(sess, model, x, y=None):
     y_batch = np.zeros((model.batch_shape[0], model.num_classes))
     y_batch[0,...] = y
 
-    pred, loss, grad = sess.run([model.output, model.loss, model.loss_x], 
+    pred, loss, grad = sess.run([model.logits, model.loss, model.loss_x], 
                                 feed_dict={model.x_tf : x_batch, model.y_tf : y_batch})
     return pred[0,...], loss[0], grad[0]
   else:
     # without a class label we can only predict
-    pred = sess.run(model.output, feed_dict={model.x_tf : x_batch})
+    pred = sess.run(model.logits, feed_dict={model.x_tf : x_batch})
     return pred[0,...]
 
 
@@ -242,7 +242,7 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
     for ii in range(n):
       x_batch[ii,...] = x + epsilon_vals[ii] * direction
 
-    preds = sess.run(model.output, feed_dict={model.x_tf : x_batch})
+    preds = sess.run(model.logits, feed_dict={model.x_tf : x_batch})
     y_hat = np.argmax(preds, axis=1)
     if np.all(y_hat == y_scalar):
       a,b = d_max, np.Inf  # label never changed in given interval
