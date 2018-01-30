@@ -1,3 +1,9 @@
+##
+## Demonstrates how to set up/execute experiment.
+##
+##
+
+GPU=CUDA_VISIBLE_DEVICES="2"
 
 DATA_DIR=${HOME}/Data//NIPS2017/images
 LOCAL_DATA=./NIPS_1000
@@ -5,9 +11,11 @@ OUTPUT_DIR=./Output_Attack
 EPS=4
 
 
+
 #-------------------------------------------------------------------------------
 default :
 	echo "please pick an explicit target"
+	echo $(GPU)
 
 
 #-------------------------------------------------------------------------------
@@ -35,18 +43,18 @@ default :
 # while the latter will be ~65% accuracy.
 #
 cifar10-train :
-	CUDA_VISIBLE_DEVICES="1" python -m models.cifar10.cifar10_train
+	$(GPU) python -m models.cifar10.cifar10_train
 
 
 # Generates AE for cifar-10
 cifar10-ae :
-	CUDA_VISIBLE_DEVICES="1" python -m models.cifar10.cifar10_wrapper
+	$(GPU) python -m models.cifar10.cifar10_wrapper
 
 
 # Analysis of AE generated previously/above.
 # This can also take awhile, you may want to nohup this target as well.
 cifar10-study :
-	CUDA_VISIBLE_DEVICES="1" python cifar10_study.py
+	$(GPU) python cifar10_study.py
 
 
 
