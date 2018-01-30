@@ -30,9 +30,9 @@ default :
 # (e.g. if you have only one GPU on your system).
 # 
 # Note that this CIFAR model significantly out-performs
-# the sample CNN that comes with CH (should get ~81% acc
-# on test data with this model).  So not state-of-the-art
-# but decent performance.
+# the sample CNN that comes with CH.
+# The former should achieve ~81% accuracy on test data
+# while the latter will be ~65% accuracy.
 #
 cifar10-train :
 	CUDA_VISIBLE_DEVICES="1" python -m models.cifar10.cifar10_train
