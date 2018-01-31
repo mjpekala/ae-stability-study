@@ -66,8 +66,7 @@ def main():
     with tf.Graph().as_default(), tf.Session(config=config) as sess:
       model = cifar10.Cifar10(sess, './Weights')
 
-      #for ii in range(1500):  # TEMP: process only a subset for now
-      for ii in range(10): # TEMP TEMP TEMP
+      for ii in range(200):  # TEMP: process only a subset for now
         xi = x[ii,...]
         yi_scalar = y[ii] 
         yi_oh = ae_utils.to_one_hot(yi_scalar, 10)
@@ -87,14 +86,18 @@ def main():
         if not yi_scalar == np.argmax(pred_clean):
           continue
 
-        # sample directions
+        #----------------------------------------
+        # sample directions (clean/original examples)
+        #----------------------------------------
         stats = pd.DataFrame(ae_utils.loss_function_stats(sess, model, xi, yi_oh, d_max, dir_sampler=dsamp, k_vals=K_VALS_FOR_GAAS))
         stats['Dataset'] = 'cifar10'
         stats['Example#'] = ii
         stats['Approx_conf'] = approx_conf(pred_clean)
         df_list.append(stats.copy())
 
+        #----------------------------------------
         # look at the corresponding AE
+        #----------------------------------------
         for ae_dataset in all_ae_datasets:
           print(' %s AE:' % ae_dataset)
 
@@ -132,6 +135,7 @@ if __name__ == "__main__":
   from tensorflow.python.client import device_lib
  
   # Use CUDA_AVAIABLE_DEVICES to restrict this to a given gpu 
+  # (see the Makefile)
   avail = device_lib.list_local_devices()
   print([x.name for x in avail])
 
