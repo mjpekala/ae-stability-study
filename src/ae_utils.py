@@ -356,14 +356,18 @@ def loss_function_stats(sess, model, x0, y0, d_max,
   # Note: instead of picking k=n_samp_d we could use some smaller k and draw convex samples from that...
   #------------------------------
   for k_idx, k in enumerate(k_vals):
+    # Determine the k directions that define the "subspace"
     Q = gaas(grad0, k)
 
-    for did, col in enumerate(Q.T): #first check different directions from subspace
+    # calculate approx. distance to decision boundary for each 
+    # GAAS 'basis' vector
+    for did, col in enumerate(Q.T): 
       a, b, y_new, loss_new = distance_to_decision_boundary(sess, model, x0, y0, col.reshape(x0.shape), d_max)
       stats.append('gaas', np.argmax(y0), (a+b)/2., y_new, loss_new-loss0, direction_id=did, k=k)
 
+    # Here we test sampling from the GAAS "subspace" by taking a convex
+    # combination of the q_i \in Q
     for jj in range(min(n_samp_d, k)):
-      # create a convex combo of the q_i
       coeff = np.random.uniform(size=k)    # coeff : a positive convex combo of q_i
       coeff = coeff / np.sum(coeff)
       q_dir = np.dot(Q,coeff)              # take linear combo
