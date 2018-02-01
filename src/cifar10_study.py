@@ -27,8 +27,10 @@ import ae_utils
 
 
 
-K_VALS_FOR_GAAS = [2, 5, 10, 20, 50]
-#   [2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] # see Evan's email 01/22/2018
+#K_VALS_FOR_GAAS = [2, 5, 10, 20, 50]
+#K_VALS_FOR_GAAS = [2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] # see Evan's email 01/22/2018
+#K_VALS_FOR_GAAS = [2, 5, 10, 20, 40, 60, 80, 100] # ~ 6min / example
+K_VALS_FOR_GAAS = [2, 5, 10, 20, 50, 75, 100] # ~ 5min / example
 
 
 
@@ -60,6 +62,7 @@ def main():
     
     dsamp = ae_utils.RandomDirections(x[0,...].shape)   # sampling strategies
     df_list = []                                        # stores intermediate results
+    tic = time.time()
 
 
     config = tf.ConfigProto(allow_soft_placement=True)  # log_device_placement=True
@@ -79,6 +82,7 @@ def main():
 
         print('-----------------------------------------------------------------------------------')
         print('EXAMPLE %d, y=%d, y_hat=%d, conf=%0.3f' % (ii, yi_scalar, np.argmax(pred_clean), approx_conf(pred_clean)))
+        print('        (net elapsed time: %0.2f min)' % ((time.time()-tic)/60.))
         sys.stdout.flush()
 
         # If the original example was misclassified, we ignore this example
