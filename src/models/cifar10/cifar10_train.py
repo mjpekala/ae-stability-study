@@ -143,10 +143,10 @@ def train_n(n=2, alpha=3.0):
 
     # Build a Graph that computes the logits predictions from the
     # inference model.
-    all_logits = cifar10.inference_n_models(images, False, n)
+    logits_list, logits_agg = cifar10.inference_n_models(images, False, n)
 
     # Calculate loss.
-    loss = cifar10.ortho_loss(all_logits, labels, alpha)
+    loss = cifar10.ortho_loss(logits_list, logits_agg, labels, alpha)
 
     # Build a Graph that trains the model with one batch of examples and
     # updates the model parameters.

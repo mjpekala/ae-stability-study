@@ -320,12 +320,13 @@ def loss(logits, labels):
 def inference_n_models(images, reuse, n):
   '''  Creates n copies of the CIFAR-10 model (that will be "glued" together).
   '''
-  logits_list = [inference(images, reuse, 'model-%d' % x) for x in range(n)]
-  return logits_list
+  logits_list = [inference(images, reuse, 'model-%d' % x) for x in range(n)]  # individual contributions
+  logits_agg = tf.add_n(logits_list, name='logit_agg')                        # aggregate decision
+  return logits_list, logits_agg
 
 
 
-def ortho_loss(logits_list, labels, alpha):
+def ortho_loss(logits_list, logits_agg, labels, alpha):
   """ Here we experiment with combining losses from multiple, identical architectures.
 
       The overall loss includes a term which promotes mutually orthogonal representations
@@ -333,8 +334,12 @@ def ortho_loss(logits_list, labels, alpha):
       (also possible they could just learn some trivial change of coordinates...)
 
       logits_list : a list of tensors with shape (#_mini_batch, #_classes) 
-                    corresponding to softmax inputs
+                    corresponding to outputs from each individual model (assumed logits)
+
+      logits_agg  : the tensorflow variable which represents the aggregation of logits_list.
+                    
       labels      : tensorflow object corresponding to the true class labels
+
       alpha       : scalar coefficient applied to ortho loss term(s)
 
       Note: initial instability may cause this loss to go NaN.
@@ -347,9 +352,8 @@ def ortho_loss(logits_list, labels, alpha):
   #
   # Crossentropy loss (uses contribution from all logits)
   #
-  all_logits = tf.add_n(logits_list, name='logit_sum')
   cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    labels=labels, logits=all_logits, name='cross_entropy_per_example')
+                    labels=labels, logits=logits_agg, name='cross_entropy_per_example')
   cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
   tf.add_to_collection('losses', cross_entropy_mean)
 
