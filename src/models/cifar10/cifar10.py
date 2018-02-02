@@ -40,6 +40,7 @@ import os
 import re
 import sys
 import tarfile
+import pdb
 
 from six.moves import urllib
 import tensorflow as tf
@@ -316,14 +317,20 @@ def loss(logits, labels):
 
 
 
-def ortho_loss(logits_list, labels):
+def ortho_loss(logits_list, labels, alpha):
   """ Here we experiment with combining losses from multiple, identical architectures.
 
       The overall loss includes a term which promotes mutually orthogonal representations
       at the logits layer.  The idea is to encourage some diversity in the sub-networks.
+      (also possible they could just learn some trivial change of coordinates...)
 
-      Also possible they could just learn some trivial change of coordinates...
+      logits_list : a list of tensors with shape (#_mini_batch, #_classes) 
+                    corresponding to softmax inputs
+      labels      : tensorflow object corresponding to the true class labels
+      alpha       : scalar coefficient applied to ortho loss term(s)
 
+      Note: initial instability may cause this loss to go NaN.
+            Re-running with different initial conditions seems to help sometimes....
       (mjp)
   """
   labels = tf.cast(labels, tf.int64)  # this is what I usually denote "y"
@@ -342,22 +349,30 @@ def ortho_loss(logits_list, labels):
     #
     # For now, we just sum upper triangular portion of the covariance matrix.
     #
+    # note: logits should have shape (#_mini_batch, #_classes)
+    #
     for ii in range(idx+1, len(logits_list)):
       # we do the dot product "manually" with an intermediate step to filter out NaN values.
-      v = tf.reshape(logits_list[ii], [-1])
-      w = tf.reshape(logits, [-1])
-      v = v / tf.norm(v, ord='euclidean')
-      w = w / tf.norm(w, ord='euclidean')
+      v = logits_list[ii]
+      w = logits
 
+      # normalize vectors.
+      v = v / tf.norm(v, ord='euclidean', axis=1, keep_dims=True)
+      w = w / tf.norm(w, ord='euclidean', axis=1, keep_dims=True)
+
+      # average dot product over all examples in mini-batch
       tmp = tf.multiply(v,w)
+      tmp = tf.reduce_sum(tmp, axis=1)
+      penalty = alpha * tf.reduce_mean(tmp) 
+      print(logits.shape, w.shape, tmp.shape, penalty.shape) # TEMP
 
       # sum over only finite (e.g. non-nan) elements
-      dot_product = tf.reduce_sum(tf.boolean_mask(tmp, tf.is_finite(tmp)))
+      #dot_product = tf.reduce_sum(tf.boolean_mask(tmp, tf.is_finite(tmp)))
 
-      tf.add_to_collection('losses', dot_product)
+      tf.add_to_collection('losses', penalty)
 
-  # Total loss includes also the weight decay terms (l2 loss) included
-  # elsewhere when creating the model.
+  # note: the total loss includes also the weight decay terms (l2 loss) included
+  #       elsewhere when creating the model.
   return tf.add_n(tf.get_collection('losses'), name='total_loss')
 
 
