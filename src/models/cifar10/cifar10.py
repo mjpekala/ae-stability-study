@@ -190,7 +190,8 @@ def inputs(eval_data):
   return images, labels
 
 
-def inference(images, reuse):
+
+def inference(images, reuse, namespace='default'):
   """Build the CIFAR-10 model.
 
   Args:
@@ -198,6 +199,13 @@ def inference(images, reuse):
 
   Returns:
     Logits.
+  """
+  with tf.variable_scope(namespace, reuse=reuse):
+    return _inference(images, reuse)
+
+
+def _inference(images, reuse):
+  """ Internal version of inference()
   """
   # We instantiate all variables using tf.get_variable() instead of
   # tf.Variable() in order to share variables across multiple GPU training runs.
@@ -266,9 +274,10 @@ def inference(images, reuse):
   # tf.nn.sparse_softmax_cross_entropy_with_logits accepts the unscaled logits
   # and performs the softmax internally for efficiency.
   #
-  # MJP: changed "softmax_layer" to "linear_layer";  
+  # MJP: changed name from "softmax_layer" to "linear_layer";  
   # This is for cleverhans, which inspects the layer name to determine
-  # whether a softmax operation was applied.
+  # whether a softmax operation was applied (which isn't great, but whatever).
+  #
   #with tf.variable_scope('softmax_linear') as scope:
   with tf.variable_scope('linear_layer', reuse=reuse) as scope:
     weights = _variable_with_weight_decay('weights', [192, NUM_CLASSES],
@@ -279,6 +288,7 @@ def inference(images, reuse):
     _activation_summary(linear_layer)
 
   return linear_layer
+
 
 
 def loss(logits, labels):
@@ -303,6 +313,53 @@ def loss(logits, labels):
   # The total loss is defined as the cross entropy loss plus all of the weight
   # decay terms (L2 loss).
   return tf.add_n(tf.get_collection('losses'), name='total_loss')
+
+
+
+def ortho_loss(logits_list, labels):
+  """ Here we experiment with combining losses from multiple, identical architectures.
+
+      The overall loss includes a term which promotes mutually orthogonal representations
+      at the logits layer.  The idea is to encourage some diversity in the sub-networks.
+
+      Also possible they could just learn some trivial change of coordinates...
+
+      (mjp)
+  """
+  labels = tf.cast(labels, tf.int64)  # this is what I usually denote "y"
+
+  for idx, logits in enumerate(logits_list):
+    #
+    # Crossentropy loss
+    #
+    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                      labels=labels, logits=logits, name='cross_entropy_per_example')
+    cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy-%d' % idx)
+    tf.add_to_collection('losses', cross_entropy_mean)
+
+    #
+    # Loss term to encourage orthogonal representations.
+    #
+    # For now, we just sum upper triangular portion of the covariance matrix.
+    #
+    for ii in range(idx+1, len(logits_list)):
+      # we do the dot product "manually" with an intermediate step to filter out NaN values.
+      v = tf.reshape(logits_list[ii], [-1])
+      w = tf.reshape(logits, [-1])
+      v = v / tf.norm(v, ord='euclidean')
+      w = w / tf.norm(w, ord='euclidean')
+
+      tmp = tf.multiply(v,w)
+
+      # sum over only finite (e.g. non-nan) elements
+      dot_product = tf.reduce_sum(tf.boolean_mask(tmp, tf.is_finite(tmp)))
+
+      tf.add_to_collection('losses', dot_product)
+
+  # Total loss includes also the weight decay terms (l2 loss) included
+  # elsewhere when creating the model.
+  return tf.add_n(tf.get_collection('losses'), name='total_loss')
+
 
 
 def _add_loss_summaries(total_loss):
