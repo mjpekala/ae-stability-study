@@ -47,8 +47,9 @@ class Cifar10(CleverhansModel):
     self.y_tf = tf.placeholder(tf.int32, shape=[self.batch_shape[0],10])  
 
     # This serves two purposes:
-    #   1) initialize the model
-    #   2) create a symbolic variable that we might use (CH will do its own thing)
+    #   1) initialize the model. Note the use of reuse=False here (vs everywhere else)
+    #   2) create a symbolic variable that we *might* use (CH will do its own thing)
+    #      
     self.logits = cifar10.inference(self.x_tf, reuse=False)
 
     # Note: we do *not* use the original network's loss here, since that contains 
