@@ -424,7 +424,7 @@ def ortho_loss(logits_list, logits_agg, labels, alpha):
   return tf.add_n(tf.get_collection('losses'), name='total_loss')
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# BEGIN: multi-model code (mjp)
+# END: multi-model code (mjp)
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 

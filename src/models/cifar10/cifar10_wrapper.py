@@ -36,12 +36,13 @@ class Cifar10(CleverhansModel):
       Some of what we do here is to support Cleverhans; some is for our own purposes/attacks.
   """
 
-  def __init__(self, sess, checkpoint_file_or_dir='./Weights/cifar10_tf/model.ckpt-970664'):
+  def __init__(self, sess, checkpoint_file_or_dir, num_models=1):
     # Note: the images are cropped prior to training.
     #       Hence, the non-standard CIFAR10 image sizes below.
     #
     self.batch_shape = [128, 24, 24, 3]
     self.num_classes = 10
+    self.num_models = num_models
 
     self.x_tf = tf.placeholder(tf.float32, shape=self.batch_shape)
     self.y_tf = tf.placeholder(tf.int32, shape=[self.batch_shape[0],10])  
@@ -49,20 +50,25 @@ class Cifar10(CleverhansModel):
     # This serves two purposes:
     #   1) initialize the model. Note the use of reuse=False here (vs everywhere else)
     #   2) create a symbolic variable that we *might* use (CH will do its own thing)
-    #      
-    self.logits = cifar10.inference(self.x_tf, reuse=False)
 
-    # Note: we do *not* use the original network's loss here, since that contains 
-    #       weight decay terms that do not really apply here.
-    #
-    # Instead, we build our own custom loss function for use with AE.
-    #
-    self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_tf)
-    if False:
-      self.loss = tf.reduce_mean(self.loss)
+    if self.num_models == 1:
+      self.logits = cifar10.inference(self.x_tf, reuse=False)
+
+      # Note: we do *not* use the original network's loss here, since that contains 
+      #       weight decay terms that do not apply here.
+      #       Instead, we build our own custom loss function for use with AE.
+      self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_tf)
+    else:
+      logits_list, self.logits = cifar10.inference_n_models(self.x_tf, reuse=False, n=self.num_models)
+      # ***  Note: this loss is (currently) agnostic of the orthogonality constraint!
+      self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels=self.y_tf)
 
     self.loss_x = tf.gradients(self.loss, self.x_tf)[0]
 
+    self.__load_weights(checkpoint_file_or_dir)
+
+
+  def __load_weights(self, checkpoint_file_or_dir):
     # load model weights
     # note: the directory must also contain the file with the name "checkpoint"
     #       in order for this to work
@@ -79,7 +85,11 @@ class Cifar10(CleverhansModel):
 
   def get_logits(self, x):
     "Part of cleverhans Model API"
-    return cifar10.inference(x, reuse=True)
+    if self.num_models == 1:
+      return cifar10.inference(x, reuse=True)
+    else:
+      _, logits_agg = cifar10.inference_n_models(self.x_tf, reuse=True, n=self.num_models)
+      return logits_agg
 
 
   def get_probs(self, x):
@@ -182,11 +192,12 @@ def _iterative_ell_infty_attack(sess, model, x, y, eps):
 if __name__ == "__main__":
   epsilon_values = [.02, .03, .05, .1, .15, .2, .25]
   output_file = 'cifar10_AE_CH.h5'
-  cnn_weights = './Weights'
+  cnn_weights = './Weights_n01'
+  cnn_weights = './Weights_n02' # TEMP
   test_data_file = os.path.expanduser('~/Data/CIFAR10/cifar-10-batches-py/test_batch')
 
   with tf.Graph().as_default(), tf.Session() as sess:
-    model = Cifar10(sess, cnn_weights)
+    model = Cifar10(sess, cnn_weights, num_models=2)
 
     #--------------------------------------------------
     # Evaluate on clean data.
