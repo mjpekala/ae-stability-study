@@ -334,22 +334,22 @@ def ortho_loss(logits_list, labels, alpha):
       (mjp)
   """
   labels = tf.cast(labels, tf.int64)  # this is what I usually denote "y"
+  n = len(logits_list)
 
+  #
+  # Crossentropy loss (uses contribution from all logits)
+  #
+  all_logits = tf.add_n(logits_list, name='logit_sum')
+  cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    labels=labels, logits=all_logits, name='cross_entropy_per_example')
+  cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
+  tf.add_to_collection('losses', cross_entropy_mean)
+
+ # Loss term to encourage orthogonal representations (at logit layer).
+ # For now, we just sum upper triangular portion of the covariance matrix.
+ # (includes contributions from all pairs of networks)
   for idx, logits in enumerate(logits_list):
-    #
-    # Crossentropy loss
-    #
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                      labels=labels, logits=logits, name='cross_entropy_per_example')
-    cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy-%d' % idx)
-    tf.add_to_collection('losses', cross_entropy_mean)
 
-    #
-    # Loss term to encourage orthogonal representations (at logit layer).
-    #
-    # For now, we just sum upper triangular portion of the covariance matrix.
-    #
-    #
     for ii in range(idx+1, len(logits_list)):
       # These are the two collections of vectors we want to take inner products of.
       # Each has the shape (#_mini_batch, #_classes)
@@ -363,9 +363,9 @@ def ortho_loss(logits_list, labels, alpha):
       w = w / (tf.norm(w, ord='euclidean', axis=1, keep_dims=True) + 1e-6)
 
       # average dot product over all examples in mini-batch
-      tmp = tf.multiply(v,w)
-      tmp = tf.reduce_sum(tmp, axis=1)
-      penalty = alpha * tf.reduce_mean(tmp) 
+      dot_product_batch = tf.multiply(v,w)
+      dot_product_batch = tf.reduce_sum(dot_product_batch, axis=1)
+      penalty = alpha * tf.reduce_mean(dot_product_batch) 
 
       # Add this pair of models' contribution to the overall loss.
       tf.add_to_collection('losses', penalty)
