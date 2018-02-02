@@ -51,7 +51,8 @@ parser = cifar10.parser
 parser.add_argument('--train_dir', type=str, default='/tmp/cifar10_train',
                     help='Directory where to write event logs and checkpoint.')
 
-parser.add_argument('--max_steps', type=int, default=1000000,
+#parser.add_argument('--max_steps', type=int, default=1000000,
+parser.add_argument('--max_steps', type=int, default=10000,  # MJP: to speed up training a bit
                     help='Number of batches to run.')
 
 parser.add_argument('--log_device_placement', type=bool, default=False,
@@ -128,7 +129,7 @@ def train():
 
 
 
-def train_n(n=2):
+def train_n(n=2, alpha=3.0):
   """Train n-way CIFAR-10 for a number of steps."""
   with tf.Graph().as_default():
     global_step = tf.train.get_or_create_global_step()
@@ -144,7 +145,7 @@ def train_n(n=2):
     all_logits = [cifar10.inference(images, False, 'model-%d' % x) for x in range(n)]
 
     # Calculate loss.
-    loss = cifar10.ortho_loss(all_logits, labels)
+    loss = cifar10.ortho_loss(all_logits, labels, alpha)
 
     # Build a Graph that trains the model with one batch of examples and
     # updates the model parameters.
@@ -169,7 +170,7 @@ def main(argv=None):  # pylint: disable=unused-argument
   n = 2
   if n > 1:
       FLAGS.train_dir = FLAGS.train_dir + "n%02d" % n
-      print('WARNING - USING EXPERIMENTAL VERSION OF THIS MODEL!!!')
+      print('\n*****\nWARNING - USING EXPERIMENTAL VERSION OF THIS MODEL!!!\n*****\n')
 
   if tf.gfile.Exists(FLAGS.train_dir):
     tf.gfile.DeleteRecursively(FLAGS.train_dir)
