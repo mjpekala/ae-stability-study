@@ -317,6 +317,14 @@ def loss(logits, labels):
 
 
 
+def inference_n_models(images, reuse, n):
+  '''  Creates n copies of the CIFAR-10 model (that will be "glued" together).
+  '''
+  logits_list = [inference(images, reuse, 'model-%d' % x) for x in range(n)]
+  return logits_list
+
+
+
 def ortho_loss(logits_list, labels, alpha):
   """ Here we experiment with combining losses from multiple, identical architectures.
 
@@ -365,7 +373,8 @@ def ortho_loss(logits_list, labels, alpha):
       # average dot product over all examples in mini-batch
       dot_product_batch = tf.multiply(v,w)
       dot_product_batch = tf.reduce_sum(dot_product_batch, axis=1)
-      penalty = alpha * tf.reduce_mean(dot_product_batch) 
+      dot_product_batch = tf.abs(dot_product_batch)
+      penalty = alpha * tf.reduce_mean(dot_product_batch)
 
       # Add this pair of models' contribution to the overall loss.
       tf.add_to_collection('losses', penalty)
