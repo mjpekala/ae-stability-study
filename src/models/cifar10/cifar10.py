@@ -345,30 +345,29 @@ def ortho_loss(logits_list, labels, alpha):
     tf.add_to_collection('losses', cross_entropy_mean)
 
     #
-    # Loss term to encourage orthogonal representations.
+    # Loss term to encourage orthogonal representations (at logit layer).
     #
     # For now, we just sum upper triangular portion of the covariance matrix.
     #
-    # note: logits should have shape (#_mini_batch, #_classes)
     #
     for ii in range(idx+1, len(logits_list)):
-      # we do the dot product "manually" with an intermediate step to filter out NaN values.
+      # These are the two collections of vectors we want to take inner products of.
+      # Each has the shape (#_mini_batch, #_classes)
+      # So the actual calculation is computing <v_i, w_i> for all i in 1, ..., #_mini_batch.
+      # Then we comptue the average over these inner products.
       v = logits_list[ii]
       w = logits
 
       # normalize vectors.
-      v = v / tf.norm(v, ord='euclidean', axis=1, keep_dims=True)
-      w = w / tf.norm(w, ord='euclidean', axis=1, keep_dims=True)
+      v = v / (tf.norm(v, ord='euclidean', axis=1, keep_dims=True) + 1e-6)
+      w = w / (tf.norm(w, ord='euclidean', axis=1, keep_dims=True) + 1e-6)
 
       # average dot product over all examples in mini-batch
       tmp = tf.multiply(v,w)
       tmp = tf.reduce_sum(tmp, axis=1)
       penalty = alpha * tf.reduce_mean(tmp) 
-      print(logits.shape, w.shape, tmp.shape, penalty.shape) # TEMP
 
-      # sum over only finite (e.g. non-nan) elements
-      #dot_product = tf.reduce_sum(tf.boolean_mask(tmp, tf.is_finite(tmp)))
-
+      # Add this pair of models' contribution to the overall loss.
       tf.add_to_collection('losses', penalty)
 
   # note: the total loss includes also the weight decay terms (l2 loss) included
