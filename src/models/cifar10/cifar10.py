@@ -316,6 +316,9 @@ def loss(logits, labels):
   return tf.add_n(tf.get_collection('losses'), name='total_loss')
 
 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# BEGIN: multi-model code (mjp)
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 def inference_n_models(images, reuse, n):
   '''  Creates n copies of the CIFAR-10 model (that will be "glued" together).
@@ -329,9 +332,9 @@ def inference_n_models(images, reuse, n):
 def ortho_loss(logits_list, logits_agg, labels, alpha):
   """ Here we experiment with combining losses from multiple, identical architectures.
 
-      The overall loss includes a term which promotes mutually orthogonal representations
-      at the logits layer.  The idea is to encourage some diversity in the sub-networks.
-      (also possible they could just learn some trivial change of coordinates...)
+      The overall loss includes a term which promotes mutually orthogonal "representations".
+      Here, by "representation" we refer to the weights of the final linear layer.
+      The idea is to encourage some diversity in the sub-networks.
 
       logits_list : a list of tensors with shape (#_mini_batch, #_classes) 
                     corresponding to outputs from each individual model (assumed logits)
@@ -349,36 +352,69 @@ def ortho_loss(logits_list, logits_agg, labels, alpha):
   labels = tf.cast(labels, tf.int64)  # this is what I usually denote "y"
   n = len(logits_list)
 
-  #
-  # Crossentropy loss (uses contribution from all logits)
-  #
-  cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    labels=labels, logits=logits_agg, name='cross_entropy_per_example')
-  cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
-  tf.add_to_collection('losses', cross_entropy_mean)
+  #--------------------------------------------------
+  # Crossentropy loss 
+  #--------------------------------------------------
+  if False:
+    # I don't like this implementation b/c it could drive all but one 
+    # network's output to 0 and rely entirely on the single non-zero network!
+    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                      labels=labels, logits=logits_agg, name='cross_entropy_per_example')
+    cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
+    tf.add_to_collection('losses', cross_entropy_mean)
+  else:
+    # TODO: make sure it is indeed true that if each individual network works
+    #       well, so does the aggregate/sum.  Should be ok since each is
+    #       taking the argmax??
+    for ii, logits_i in enumerate(logits_list):
+      cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                         labels=labels, logits=logits_i, name='cross_entropy_per_example_%d' % ii)
+      cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy_%d' % ii)
+      cross_entropy_mean = cross_entropy_mean / n  # normalize contribution of this network
+      tf.add_to_collection('losses', cross_entropy_mean)
 
- # Loss term to encourage orthogonal representations (at logit layer).
- # For now, we just sum upper triangular portion of the covariance matrix.
- # (includes contributions from all pairs of networks)
+
+  #--------------------------------------------------
+  # Loss term to encourage "orthogonal" representations.
+  #
+  # For now, we just sum upper triangular portion of the covariance matrix .
+  # (includes contributions from all pairs of networks)
+  #--------------------------------------------------
   for idx, logits in enumerate(logits_list):
 
     for ii in range(idx+1, len(logits_list)):
-      # These are the two collections of vectors we want to take inner products of.
-      # Each has the shape (#_mini_batch, #_classes)
-      # So the actual calculation is computing <v_i, w_i> for all i in 1, ..., #_mini_batch.
-      # Then we comptue the average over these inner products.
-      v = logits_list[ii]
-      w = logits
+      if True:
+        # Approximation - pushes the desire for orthogonal representations 
+        # somewhere into the network (vs within a precise set of layer parameters)
+        v = logits_list[ii]
+        w = logits
 
-      # normalize vectors.
-      v = v / (tf.norm(v, ord='euclidean', axis=1, keep_dims=True) + 1e-6)
-      w = w / (tf.norm(w, ord='euclidean', axis=1, keep_dims=True) + 1e-6)
+        # normalize vectors.
+        # observe these are batches/rows of vectors, so we normalize each row independently.
+        v = v / (tf.norm(v, ord='euclidean', axis=1, keep_dims=True) + 1e-6)
+        w = w / (tf.norm(w, ord='euclidean', axis=1, keep_dims=True) + 1e-6)
+        
+        # average dot product over all examples in mini-batch
+        dot_product_batch = tf.multiply(v,w)
+        dot_product_batch = tf.reduce_sum(dot_product_batch, axis=1)
+        dot_product_batch = tf.abs(dot_product_batch)
+        penalty = alpha * tf.reduce_mean(dot_product_batch)
 
-      # average dot product over all examples in mini-batch
-      dot_product_batch = tf.multiply(v,w)
-      dot_product_batch = tf.reduce_sum(dot_product_batch, axis=1)
-      dot_product_batch = tf.abs(dot_product_batch)
-      penalty = alpha * tf.reduce_mean(dot_product_batch)
+      else:
+        # push gradients to be orthogonal??
+
+        # ** WARNING ** 
+        # Here we make very specific assumption about how model is organized!!
+        # ** WARNING **
+        def get_upstream_matrix(ll):
+          assert(ll.op.type == 'Add')
+          assert(ll.op.inputs[0].op.type == 'MatMul')
+          return ll.op.inputs[0].op.inputs[1] # assume second input is parameter matrix
+
+        w = get_upstream_matrix(logits)
+        v = get_upstream_matrix(logits_list[ii])
+        print(v.shape, w.shape) # TEMP
+        raise RuntimeError("still working here...")
 
       # Add this pair of models' contribution to the overall loss.
       tf.add_to_collection('losses', penalty)
@@ -386,6 +422,10 @@ def ortho_loss(logits_list, logits_agg, labels, alpha):
   # note: the total loss includes also the weight decay terms (l2 loss) included
   #       elsewhere when creating the model.
   return tf.add_n(tf.get_collection('losses'), name='total_loss')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# BEGIN: multi-model code (mjp)
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
 
