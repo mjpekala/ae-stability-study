@@ -65,10 +65,10 @@ class Cifar10(CleverhansModel):
 
     self.loss_x = tf.gradients(self.loss, self.x_tf)[0]
 
-    self.__load_weights(checkpoint_file_or_dir)
+    self.__load_weights(sess, checkpoint_file_or_dir)
 
 
-  def __load_weights(self, checkpoint_file_or_dir):
+  def __load_weights(self, sess, checkpoint_file_or_dir):
     # load model weights
     # note: the directory must also contain the file with the name "checkpoint"
     #       in order for this to work
