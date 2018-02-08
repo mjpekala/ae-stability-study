@@ -189,6 +189,12 @@ def _iterative_ell_infty_attack(sess, model, x, y, eps, ord=2):
 
 
 
+def _sum_examples(v):
+    # assumes dimension 0 is the example dimension
+    while(v.ndim > 1):
+        v = np.sum(v,1)
+    return v
+
 
 if __name__ == "__main__":
 
@@ -199,7 +205,7 @@ if __name__ == "__main__":
 
 
   if p_norm == 2:
-      epsilon_values = [0.2, 0.3, 0.5, 0.75, 1, 2, 5, 10] 
+      epsilon_values = [0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 2.5, 5, 10] 
   elif p_norm == np.inf:
       epsilon_values = [.02, .03, .05, .1, .15, .2, .25]
   else: 
@@ -246,6 +252,7 @@ if __name__ == "__main__":
         grp2 = grp.create_group('FGM-%0.2f' % eps)
         grp2['x'] = x_adv
         grp2['y_hat'] = y_hat_adv 
+        grp2['delta_l2'] = np.sqrt(_sum_examples((x - x_adv) ** 2))
         grp2['epsilon'] = eps
         grp2['p-norm'] = p_norm
 
@@ -261,6 +268,7 @@ if __name__ == "__main__":
         grp2['x'] = x_adv
         grp2['y_hat'] = y_hat_adv 
         grp2['epsilon'] = eps
+        grp2['delta_l2'] = np.sqrt(_sum_examples((x - x_adv) ** 2))
         grp2['p-norm'] = p_norm
 
 
@@ -279,3 +287,4 @@ if __name__ == "__main__":
         y_hat = h5['cifar10'][name]['y_hat'].value
         acc_adv = 100. * np.sum(y_hat == y_true) / y_hat.size
         print('[cifar10_wrapper]: network accuracy on %s (from saved file): %0.2f%%' % (name, acc_adv))
+        #print('[cifar10_wrapper]: mean ell_2 delta:', np.mean(h5['cifar10'][name]['delta_l2']))
