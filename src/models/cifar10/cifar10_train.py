@@ -167,7 +167,9 @@ def train_n(n=2, alpha=3.0):
 def main(argv=None):  # pylint: disable=unused-argument
   cifar10.maybe_download_and_extract()
 
-  n = 2
+  # MJP: the n>1 case is for the "orthogonal" representation experiment
+  #      n=1 is the usual network
+  n = 1
   if n > 1:
       FLAGS.train_dir = FLAGS.train_dir + "n%02d" % n
       print('\n*****\nWARNING - USING EXPERIMENTAL VERSION OF THIS MODEL!!!\n*****\n')
