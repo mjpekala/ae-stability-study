@@ -160,12 +160,12 @@ def _eval_model(sess, model, x, y):
 
 
 
-def _fgsm_attack(sess, model, x, y, eps):
+def _fgsm_attack(sess, model, x, y, eps, ord=2):
   """
    Craft adversarial examples using Fast Gradient Sign Method (FGSM)
   """
   attack = FastGradientMethod(model, sess=sess)
-  x_adv_tf = attack.generate(model.x_tf, eps=eps, clip_min=np.min(x), clip_max=np.max(x))
+  x_adv_tf = attack.generate(model.x_tf, eps=eps, ord=ord, clip_min=np.min(x), clip_max=np.max(x))
 
   y_oh = to_one_hot(y, 10)
   x_adv = run_in_batches(sess, model.x_tf, model.y_tf, x_adv_tf, x, y_oh, model.batch_shape[0])
@@ -174,12 +174,12 @@ def _fgsm_attack(sess, model, x, y, eps):
 
 
 
-def _iterative_ell_infty_attack(sess, model, x, y, eps):
+def _iterative_ell_infty_attack(sess, model, x, y, eps, ord=2):
   """
    Use some iterative method with ell infty constraints here.
   """
   attack = MomentumIterativeMethod(model, sess=sess)
-  x_adv_tf = attack.generate(model.x_tf, eps=eps, clip_min=np.min(x), clip_max=np.max(x))
+  x_adv_tf = attack.generate(model.x_tf, eps=eps, ord=ord, clip_min=np.min(x), clip_max=np.max(x))
 
   y_oh = to_one_hot(y, 10)
   x_adv = run_in_batches(sess, model.x_tf, model.y_tf, x_adv_tf, x, y_oh, model.batch_shape[0])
@@ -190,14 +190,28 @@ def _iterative_ell_infty_attack(sess, model, x, y, eps):
 
 
 if __name__ == "__main__":
-  epsilon_values = [.02, .03, .05, .1, .15, .2, .25]
+
+  p_norm = 2      # norm to use when generating attacks
+  num_models = 1  # number of models to use under the hood (1 is standard setup)
   output_file = 'cifar10_AE_CH.h5'
-  cnn_weights = './Weights_n01'
-  cnn_weights = './Weights_n02' # TEMP
-  test_data_file = os.path.expanduser('~/Data/CIFAR10/cifar-10-batches-py/test_batch')
+  test_data_file = os.path.expanduser('~/Data/CIFAR10/cifar-10-batches-py/test_batch')  # CIFAR data
+
+
+  if p_norm == 2:
+      epsilon_values = [0.2, 0.3, 0.5, 0.75, 1, 2, 5, 10] 
+  elif p_norm == np.inf:
+      epsilon_values = [.02, .03, .05, .1, .15, .2, .25]
+  else: 
+      raise RuntimeError('unsupported p_norm')
+
+  if num_models == 1
+    cnn_weights = './Weights_n01'
+  else:
+    cnn_weights = './Weights_n%02d' % num_models
+
 
   with tf.Graph().as_default(), tf.Session() as sess:
-    model = Cifar10(sess, cnn_weights, num_models=2)
+    model = Cifar10(sess, cnn_weights, num_models=num_models)
 
     #--------------------------------------------------
     # Evaluate on clean data.
@@ -222,7 +236,7 @@ if __name__ == "__main__":
       # One-step \ell_\infty attack
       #----------------------------------------
       for eps in epsilon_values:
-        x_adv = _fgsm_attack(sess, model, x, y, eps=eps)
+        x_adv = _fgsm_attack(sess, model, x, y, eps=eps, ord=p_norm)
         y_hat_adv, acc_adv = _eval_model(sess, model, x_adv, y)
         print('[cifar10_wrapper]: network accuracy on FGM(eps=%0.2f) CIFAR10: %0.2f%%' % (eps, acc_adv))
 
@@ -230,12 +244,13 @@ if __name__ == "__main__":
         grp2['x'] = x_adv
         grp2['y_hat'] = y_hat_adv 
         grp2['epsilon'] = eps
+        grp2['p-norm'] = p_norm
 
       #----------------------------------------
       # Iterative \ell_\infty attack
       #----------------------------------------
       for eps in epsilon_values:
-        x_adv = _iterative_ell_infty_attack(sess, model, x, y, eps=eps)
+        x_adv = _iterative_ell_infty_attack(sess, model, x, y, eps=eps, ord=p_norm)
         y_hat_adv, acc_adv = _eval_model(sess, model, x_adv, y)
         print('[cifar10_wrapper]: network accuracy on I-FGM(eps=%0.2f) CIFAR10: %0.2f%%' % (eps, acc_adv))
 
@@ -243,6 +258,7 @@ if __name__ == "__main__":
         grp2['x'] = x_adv
         grp2['y_hat'] = y_hat_adv 
         grp2['epsilon'] = eps
+        grp2['p-norm'] = p_norm
 
 
   print('[cifar10_wrapper]: results saved to file "%s"' % output_file)
