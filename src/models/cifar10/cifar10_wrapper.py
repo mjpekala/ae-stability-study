@@ -21,7 +21,7 @@ import tensorflow as tf
 
 from cleverhans import utils_tf
 from cleverhans.model import Model as CleverhansModel
-from cleverhans.attacks import FastGradientMethod, MomentumIterativeMethod
+from cleverhans.attacks import FastGradientMethod, BasicIterativeMethod, MomentumIterativeMethod
 
 from . import cifar10
 from .cifar10_input import read_cifar10
@@ -178,7 +178,8 @@ def _iterative_ell_infty_attack(sess, model, x, y, eps, ord=2):
   """
    Use some iterative method with ell infty constraints here.
   """
-  attack = MomentumIterativeMethod(model, sess=sess)
+  #attack = MomentumIterativeMethod(model, sess=sess)  # not compatible with ell_2 as of 2/2018 ??
+  attack = BasicIterativeMethod(model, sess=sess)
   x_adv_tf = attack.generate(model.x_tf, eps=eps, ord=ord, clip_min=np.min(x), clip_max=np.max(x))
 
   y_oh = to_one_hot(y, 10)
@@ -204,7 +205,7 @@ if __name__ == "__main__":
   else: 
       raise RuntimeError('unsupported p_norm')
 
-  if num_models == 1
+  if num_models == 1:
     cnn_weights = './Weights_n01'
   else:
     cnn_weights = './Weights_n%02d' % num_models
@@ -222,6 +223,8 @@ if __name__ == "__main__":
     print('[cifar10_wrapper]: x mu/sigma:        %0.2f / %0.2f' % (np.mean(x), np.std(x)))
     print('[cifar10_wrapper]: using epsilon:    ', epsilon_values)
     print('[cifar10_wrapper]: using tensorflow: ', tf.__version__)
+    print('[cifar10_wrapper]: using p_norm:     ', p_norm)
+    print('[cifar10_wrapper]: using # models:   ', num_models)
 
     y_hat, acc = _eval_model(sess, model, x, y)
     print('[cifar10_wrapper]: network accuracy on original/clean CIFAR10 (%d examples): %0.2f%%' % (y_hat.size,acc))
