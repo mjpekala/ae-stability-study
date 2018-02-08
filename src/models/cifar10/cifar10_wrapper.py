@@ -287,4 +287,5 @@ if __name__ == "__main__":
         y_hat = h5['cifar10'][name]['y_hat'].value
         acc_adv = 100. * np.sum(y_hat == y_true) / y_hat.size
         print('[cifar10_wrapper]: network accuracy on %s (from saved file): %0.2f%%' % (name, acc_adv))
-        #print('[cifar10_wrapper]: mean ell_2 delta:', np.mean(h5['cifar10'][name]['delta_l2']))
+        print('[cifar10_wrapper]:     min ell_2 delta:', np.min(h5['cifar10'][name]['delta_l2']))
+        print('[cifar10_wrapper]:     max ell_2 delta:', np.max(h5['cifar10'][name]['delta_l2']))
