@@ -257,6 +257,19 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-3)
     a = epsilon_vals[first_change-1]
     b = epsilon_vals[first_change]
 
+    # if everything were deterministic and well-conditioned, first_change would
+    # always be greater than 0.  However, in the event that it is not, we
+    # make some concession and try again.
+    if first_change > 0:
+      # the expected case
+      a = epsilon_vals[first_change-1]
+      b = epsilon_vals[first_change]
+    else:
+      print('[dtdb]: WARNING: first_change occurred at index 0!!')
+      a = min(0, a - 2*tol)  # a hack
+      b = b
+
+  # loop terminated; either we found interval or failed
   if np.isfinite(b):
     # if a point was found, provide some additional info
     y_new = y_hat[first_change]
