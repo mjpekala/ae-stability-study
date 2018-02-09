@@ -267,7 +267,7 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
 
 
 def loss_function_stats(sess, model, x0, y0, d_max, 
-                        n_samp_d=30, k_vals=[2,5,10], verbose=True, dir_sampler=None):
+                        n_samp_d=200, k_vals=[2,5,10], verbose=True, dir_sampler=None):
   """ Computes various statistics related to the loss function in the viscinity of 
       a single example (x0,y0).  
 
