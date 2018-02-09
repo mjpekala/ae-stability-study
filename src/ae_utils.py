@@ -52,6 +52,13 @@ def finite_mean(v):
     return np.mean(v[np.isfinite(v)])
 
 
+def finite_min(v):
+  "Returns the min of the finite elements in v."
+  if not np.any(np.isfinite(v)):
+    return np.nan
+  else:
+    return np.min(v[np.isfinite(v)])
+
 
 
 #-------------------------------------------------------------------------------
@@ -316,6 +323,7 @@ def loss_function_stats(sess, model, x0, y0, d_max,
 
       for dname in ['gaussian', 'gaas']:
         tmp = df.loc[df['direction_type'] == dname]
+        s += '  min dist label change along "%s" direction: %0.3f\n' % (dname, finite_min(tmp['boundary_distance']))
         s += '  expected label change along "%s" direction: %0.3f\n' % (dname, finite_mean(tmp['boundary_distance']))
 
       return s
