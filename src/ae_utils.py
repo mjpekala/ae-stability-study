@@ -251,20 +251,22 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-3)
       break
 
     first_change = np.min(np.where(y_hat != y_scalar)[0])
-    assert(first_change > 0)
 
-    # refine interval
-    a = epsilon_vals[first_change-1]
-    b = epsilon_vals[first_change]
+    # OLD REFINE CODE - potential numerical issues!  See new code below...
+    ##assert(first_change > 0)
+    ## refine interval
+    ##a = epsilon_vals[first_change-1]
+    ##b = epsilon_vals[first_change]
 
     # if everything were deterministic and well-conditioned, first_change would
     # always be greater than 0.  However, in the event that it is not, we
     # make some concession and try again.
     if first_change > 0:
-      # the expected case
+      # the expected/typical case
       a = epsilon_vals[first_change-1]
       b = epsilon_vals[first_change]
     else:
+      # unexpected case
       print('[dtdb]: WARNING: first_change occurred at index 0!!')
       a = min(0, a - 2*tol)  # a hack
       b = b
