@@ -31,7 +31,7 @@ import ae_utils
 #K_VALS_FOR_GAAS = [2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] # see Evan's email 01/22/2018
 #K_VALS_FOR_GAAS = [2, 5, 10, 20, 40, 60, 80, 100] # ~ 6min / example
 #K_VALS_FOR_GAAS = [2, 5, 10, 20, 50, 75, 100] # ~ 5min / example
-K_VALS_FOR_GAAS = [2, 3, 4, 5, 7, 10, 15, 20, 30, 40] # 
+K_VALS_FOR_GAAS = [2, 3, 4, 5, 7, 10, 15, 20, 30] #  2/8/2018 - keep low for computational reasons
 
 
 
@@ -47,7 +47,7 @@ def main():
   """
 
   batch_size = 32             # CNN mini-batch size
-  d_max = 20                  # maximum distance to move in any one direction
+  d_max = 40                  # maximum distance to move in any one direction
   tf.set_random_seed(1099) 
 
   # TODO: smoothing one-hot class label vectors???
@@ -68,7 +68,6 @@ def main():
 
     config = tf.ConfigProto(allow_soft_placement=True)  # log_device_placement=True
     with tf.Graph().as_default(), tf.Session(config=config) as sess:
-      print(sess) # TEMP
       model = cifar10.Cifar10(sess, './Weights_n01')  # XXX: update if using multi model!
 
       for ii in range(200):  # TEMP: process only a subset for now
@@ -91,6 +90,8 @@ def main():
         # since the notion of AE makes less sense.
         if not yi_scalar == np.argmax(pred_clean):
           continue
+
+        print(' CLEAN EXAMPLE:')
 
         #----------------------------------------
         # sample directions (clean/original examples)
