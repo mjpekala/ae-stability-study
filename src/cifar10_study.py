@@ -30,7 +30,8 @@ import ae_utils
 #K_VALS_FOR_GAAS = [2, 5, 10, 20, 50]
 #K_VALS_FOR_GAAS = [2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100] # see Evan's email 01/22/2018
 #K_VALS_FOR_GAAS = [2, 5, 10, 20, 40, 60, 80, 100] # ~ 6min / example
-K_VALS_FOR_GAAS = [2, 5, 10, 20, 50, 75, 100] # ~ 5min / example
+#K_VALS_FOR_GAAS = [2, 5, 10, 20, 50, 75, 100] # ~ 5min / example
+K_VALS_FOR_GAAS = [2, 3, 4, 5, 7, 10, 15, 20, 30, 40] # 
 
 
 
@@ -67,7 +68,8 @@ def main():
 
     config = tf.ConfigProto(allow_soft_placement=True)  # log_device_placement=True
     with tf.Graph().as_default(), tf.Session(config=config) as sess:
-      model = cifar10.Cifar10(sess, './Weights')
+      print(sess) # TEMP
+      model = cifar10.Cifar10(sess, './Weights_n01')  # XXX: update if using multi model!
 
       for ii in range(200):  # TEMP: process only a subset for now
         xi = x[ii,...]
@@ -123,6 +125,7 @@ def main():
           stats['Dataset'] = ae_dataset
           stats['Example#'] = ii
           stats['Approx_conf'] = approx_conf(pred_ae)
+          stats['delta_l2'] = h5['cifar10'][ae_dataset]['delta_l2'][ii]
           df_list.append(stats.copy())
 
 
