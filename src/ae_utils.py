@@ -5,10 +5,10 @@ __author__ = "mjp,ef"
 __date__ = "dec, 2017"
 
 
+import math, random
 import numpy as np
-from scipy.stats import ortho_group
 from numpy.linalg import norm
-import random
+from scipy.stats import ortho_group
 import pandas as pd
 
 import pdb, unittest
@@ -16,6 +16,33 @@ import pdb, unittest
 from gaas import gaas
 
 
+
+#-------------------------------------------------------------------------------
+# Generic helper/utility functions
+#-------------------------------------------------------------------------------
+
+def splitpath(full_path):
+  """
+  Splits a path into all possible pieces (vs. just head/tail).
+  """
+  head, tail = os.path.split(full_path)
+
+  result = [tail]
+
+  while len(head) > 0:
+    [head, tail] = os.path.split(head)
+    result.append(tail)
+
+  result = [x for x in result if len(x)]
+  return result[::-1]
+
+
+
+def makedirs_if_needed(dirname):
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+        
 
 def finite_mean(v):
   "Returns the mean of the finite elements in v."
@@ -25,6 +52,18 @@ def finite_mean(v):
     return np.mean(v[np.isfinite(v)])
 
 
+def finite_min(v):
+  "Returns the min of the finite elements in v."
+  if not np.any(np.isfinite(v)):
+    return np.nan
+  else:
+    return np.min(v[np.isfinite(v)])
+
+
+
+#-------------------------------------------------------------------------------
+# Functions for dealing with Tensorflow and/or network models
+#-------------------------------------------------------------------------------
 
 def to_one_hot(y, n_classes=None):
   """   
@@ -85,17 +124,61 @@ def get_info(sess, model, x, y=None):
     y_batch = np.zeros((model.batch_shape[0], model.num_classes))
     y_batch[0,...] = y
 
-    pred, loss, grad = sess.run([model.output, model.loss, model.loss_x], 
+    pred, loss, grad = sess.run([model.logits, model.loss, model.loss_x], 
                                 feed_dict={model.x_tf : x_batch, model.y_tf : y_batch})
     return pred[0,...], loss[0], grad[0]
   else:
     # without a class label we can only predict
-    pred = sess.run(model.output, feed_dict={model.x_tf : x_batch})
+    pred = sess.run(model.logits, feed_dict={model.x_tf : x_batch})
     return pred[0,...]
 
 
+
+def run_in_batches(sess, x_tf, y_tf, output_tf, x_in, y_in, batch_size):
+    """ 
+     Runs data through a CNN one batch at a time; gathers all results
+     together into a single tensor.  This assumes the output of each
+     batch is tensor-like.
+
+        sess      : the tensorflow session to use
+        x_tf      : placeholder for input x
+        y_tf      : placeholder for input y
+        output_tf : placeholder for CNN output
+        x_in      : data set to process (numpy tensor)
+        y_in      : associated labels (numpy, one-hot encoding)
+        batch_size : minibatch size (scalar)
+
+    """
+    n_examples = x_in.shape[0]  # total num. of objects to feed
+
+    # determine how many mini-batches are required
+    nb_batches = int(math.ceil(float(n_examples) / batch_size))
+    assert nb_batches * batch_size >= n_examples
+
+    out = []
+    with sess.as_default():
+        for start in np.arange(0, n_examples, batch_size):
+            # the min() stuff here is to handle the last batch, which may be partial
+            end = min(n_examples, start + batch_size)
+            start_actual = min(start, n_examples - batch_size)
+
+            feed_dict = {x_tf : x_in[start_actual:end], y_tf : y_in[start_actual:end]}
+            output_i = sess.run(output_tf, feed_dict=feed_dict)
+
+            # the slice is to avoid any extra stuff in last mini-batch,
+            # which might not be entirely "full"
+            skip = start - start_actual
+            output_i = output_i[skip:]
+            out.append(output_i)
+
+    out = np.concatenate(out, axis=0)
+    assert(out.shape[0] == n_examples)
+    return out
+
+
+
 #-------------------------------------------------------------------------------
-# Helpers for random sampling
+# Functions for sampling
 #-------------------------------------------------------------------------------
 
 class RandomDirections:
@@ -127,10 +210,14 @@ class RandomDirections:
       out = self.ortho_group[rows,:]
       return np.reshape(out, (n_samps,) + self._shape)
 
+
+
+#-------------------------------------------------------------------------------
+# Functions related to analysis of AE
 #-------------------------------------------------------------------------------
 
 
-def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1):
+def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-3):
   """ Computes (approximately) the distance one needs to move along
       some direction in order for the CNN to change its decision.  
 
@@ -141,6 +228,8 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
       direction : the search direction; same shape as x
       d_max     : the maximum distance to move along direction (scalar)
       tol       : the maximum size of the interval around the change
+                  NOTE: this should be related to d_max (e.g. should be
+                        an order or two smaller)
   """
   assert(not np.isscalar(y))
   y_scalar = np.argmax(y,axis=1)
@@ -162,19 +251,34 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
     for ii in range(n):
       x_batch[ii,...] = x + epsilon_vals[ii] * direction
 
-    preds = sess.run(model.output, feed_dict={model.x_tf : x_batch})
+    preds = sess.run(model.logits, feed_dict={model.x_tf : x_batch})
     y_hat = np.argmax(preds, axis=1)
     if np.all(y_hat == y_scalar):
       a,b = d_max, np.Inf  # label never changed in given interval
       break
 
     first_change = np.min(np.where(y_hat != y_scalar)[0])
-    assert(first_change > 0)
 
-    # refine interval
-    a = epsilon_vals[first_change-1]
-    b = epsilon_vals[first_change]
+    # OLD REFINE CODE - potential numerical issues!  See new code below...
+    ##assert(first_change > 0)
+    ## refine interval
+    ##a = epsilon_vals[first_change-1]
+    ##b = epsilon_vals[first_change]
 
+    # if everything were deterministic and well-conditioned, first_change would
+    # always be greater than 0.  However, in the event that it is not, we
+    # make some concession and try again.
+    if first_change > 0:
+      # the expected/typical case
+      a = epsilon_vals[first_change-1]
+      b = epsilon_vals[first_change]
+    else:
+      # unexpected case
+      print('[dtdb]: WARNING: first_change occurred at index 0!!')
+      a = min(0, a - 2*tol)  # a hack
+      b = b
+
+  # loop terminated; either we found interval or failed
   if np.isfinite(b):
     # if a point was found, provide some additional info
     y_new = y_hat[first_change]
@@ -187,7 +291,7 @@ def distance_to_decision_boundary(sess, model, x, y, direction, d_max, tol=1e-1)
 
 
 def loss_function_stats(sess, model, x0, y0, d_max, 
-                        n_samp_d=30, k_vals=[2,5,10], verbose=True, dir_sampler=None):
+                        n_samp_d=100, k_vals=[2,5,10], verbose=True, dir_sampler=None):
   """ Computes various statistics related to the loss function in the viscinity of 
       a single example (x0,y0).  
 
@@ -219,6 +323,7 @@ def loss_function_stats(sess, model, x0, y0, d_max,
 
       for dname in ['gaussian', 'gaas']:
         tmp = df.loc[df['direction_type'] == dname]
+        s += '  min dist label change along "%s" direction: %0.3f\n' % (dname, finite_min(tmp['boundary_distance']))
         s += '  expected label change along "%s" direction: %0.3f\n' % (dname, finite_mean(tmp['boundary_distance']))
 
       return s
@@ -276,14 +381,18 @@ def loss_function_stats(sess, model, x0, y0, d_max,
   # Note: instead of picking k=n_samp_d we could use some smaller k and draw convex samples from that...
   #------------------------------
   for k_idx, k in enumerate(k_vals):
+    # Determine the k directions that define the "subspace"
     Q = gaas(grad0, k)
 
-    for did, col in enumerate(Q.T): #first check different directions from subspace
+    # calculate approx. distance to decision boundary for each 
+    # GAAS 'basis' vector
+    for did, col in enumerate(Q.T): 
       a, b, y_new, loss_new = distance_to_decision_boundary(sess, model, x0, y0, col.reshape(x0.shape), d_max)
       stats.append('gaas', np.argmax(y0), (a+b)/2., y_new, loss_new-loss0, direction_id=did, k=k)
 
+    # Here we test sampling from the GAAS "subspace" by taking a convex
+    # combination of the q_i \in Q
     for jj in range(min(n_samp_d, k)):
-      # create a convex combo of the q_i
       coeff = np.random.uniform(size=k)    # coeff : a positive convex combo of q_i
       coeff = coeff / np.sum(coeff)
       q_dir = np.dot(Q,coeff)              # take linear combo

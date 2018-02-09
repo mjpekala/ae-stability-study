@@ -1,3 +1,14 @@
+##
+## Demonstrates how to set up/execute experiment.
+##
+##
+
+
+# directory containing cleverhans AE dir.
+CLEVERHANS_DIR=./cleverhans
+
+GPU=CUDA_VISIBLE_DEVICES="2"
+PYTHON=PYTHONPATH=$(CLEVERHANS_DIR) python
 
 DATA_DIR=${HOME}/Data//NIPS2017/images
 LOCAL_DATA=./NIPS_1000
@@ -5,9 +16,16 @@ OUTPUT_DIR=./Output_Attack
 EPS=4
 
 
+
 #-------------------------------------------------------------------------------
 default :
 	echo "please pick an explicit target"
+	echo $(GPU)
+
+
+# note: this assumes CLEVERHANS_DIR is ./cleverhans
+$(CLEVERHANS_DIR) :
+	git clone https://github.com/tensorflow/cleverhans.git
 
 
 #-------------------------------------------------------------------------------
@@ -30,23 +48,23 @@ default :
 # (e.g. if you have only one GPU on your system).
 # 
 # Note that this CIFAR model significantly out-performs
-# the sample CNN that comes with CH (should get ~81% acc
-# on test data with this model).  So not state-of-the-art
-# but decent performance.
+# the sample CNN that comes with CH.
+# The former should achieve ~81% accuracy on test data
+# while the latter will be ~65% accuracy.
 #
 cifar10-train :
-	CUDA_VISIBLE_DEVICES="1" python -m models.cifar10.cifar10_train
+	$(GPU) $(PYTHON) -m models.cifar10.cifar10_train
 
 
 # Generates AE for cifar-10
 cifar10-ae :
-	CUDA_VISIBLE_DEVICES="1" python -m models.cifar10.cifar10_wrapper
+	$(GPU) $(PYTHON) -m models.cifar10.cifar10_wrapper
 
 
 # Analysis of AE generated previously/above.
 # This can also take awhile, you may want to nohup this target as well.
 cifar10-study :
-	CUDA_VISIBLE_DEVICES="1" python cifar10_study.py
+	$(GPU) $(PYTHON) cifar10_study.py
 
 
 

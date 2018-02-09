@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+# Updated 2017/2018 by MJP
+
 """A binary to train CIFAR-10 using a single GPU.
 
 Accuracy:
@@ -38,8 +40,10 @@ from __future__ import print_function
 
 from datetime import datetime
 import time
+import pdb
 
 import tensorflow as tf
+#from tensorflow.contrib.learn.monitors import ValidationMonitor #  TODO: find/install this
 
 from . import cifar10
 
@@ -48,7 +52,10 @@ parser = cifar10.parser
 parser.add_argument('--train_dir', type=str, default='/tmp/cifar10_train',
                     help='Directory where to write event logs and checkpoint.')
 
-parser.add_argument('--max_steps', type=int, default=1000000,
+# MJP: I was seeing accuracy closer to 81% (vs 86 reported above);
+#      Perhaps some additional investigation when time permits.
+#parser.add_argument('--max_steps', type=int, default=1000000,
+parser.add_argument('--max_steps', type=int, default=50000,  # MJP; 
                     help='Number of batches to run.')
 
 parser.add_argument('--log_device_placement', type=bool, default=False,
@@ -56,6 +63,38 @@ parser.add_argument('--log_device_placement', type=bool, default=False,
 
 parser.add_argument('--log_frequency', type=int, default=10,
                     help='How often to log results to the console.')
+
+
+
+class _LoggerHook(tf.train.SessionRunHook):
+  """Logs loss and runtime."""
+
+  def __init__(self, loss):
+    self.loss = loss
+
+  def begin(self):
+    self._step = -1
+    self._start_time = time.time()
+
+  def before_run(self, run_context):
+    self._step += 1
+    return tf.train.SessionRunArgs(self.loss)  # Asks for loss value.
+
+  def after_run(self, run_context, run_values):
+    if self._step % FLAGS.log_frequency == 0:
+      current_time = time.time()
+      duration = current_time - self._start_time
+      self._start_time = current_time
+
+      loss_value = run_values.results
+      examples_per_sec = FLAGS.log_frequency * FLAGS.batch_size / duration
+      sec_per_batch = float(duration / FLAGS.log_frequency)
+
+      format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
+                    'sec/batch)')
+      print (format_str % (datetime.now(), self._step, loss_value,
+                           examples_per_sec, sec_per_batch))
+
 
 
 def train():
@@ -71,7 +110,7 @@ def train():
 
     # Build a Graph that computes the logits predictions from the
     # inference model.
-    logits = cifar10.inference(images)
+    logits = cifar10.inference(images, False)
 
     # Calculate loss.
     loss = cifar10.loss(logits, labels)
@@ -80,49 +119,72 @@ def train():
     # updates the model parameters.
     train_op = cifar10.train(loss, global_step)
 
-    class _LoggerHook(tf.train.SessionRunHook):
-      """Logs loss and runtime."""
-
-      def begin(self):
-        self._step = -1
-        self._start_time = time.time()
-
-      def before_run(self, run_context):
-        self._step += 1
-        return tf.train.SessionRunArgs(loss)  # Asks for loss value.
-
-      def after_run(self, run_context, run_values):
-        if self._step % FLAGS.log_frequency == 0:
-          current_time = time.time()
-          duration = current_time - self._start_time
-          self._start_time = current_time
-
-          loss_value = run_values.results
-          examples_per_sec = FLAGS.log_frequency * FLAGS.batch_size / duration
-          sec_per_batch = float(duration / FLAGS.log_frequency)
-
-          format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
-                        'sec/batch)')
-          print (format_str % (datetime.now(), self._step, loss_value,
-                               examples_per_sec, sec_per_batch))
 
     with tf.train.MonitoredTrainingSession(
         checkpoint_dir=FLAGS.train_dir,
         hooks=[tf.train.StopAtStepHook(last_step=FLAGS.max_steps),
                tf.train.NanTensorHook(loss),
-               _LoggerHook()],
+               _LoggerHook(loss)],
         config=tf.ConfigProto(
             log_device_placement=FLAGS.log_device_placement)) as mon_sess:
       while not mon_sess.should_stop():
         mon_sess.run(train_op)
 
 
+
+def train_n(n=2, alpha=3.0):
+  """Train n-way CIFAR-10 for a number of steps."""
+  with tf.Graph().as_default():
+    global_step = tf.train.get_or_create_global_step()
+
+    # Get images and labels for CIFAR-10.
+    # Force input pipeline to CPU:0 to avoid operations sometimes ending up on
+    # GPU and resulting in a slow down.
+    with tf.device('/cpu:0'):
+      images, labels = cifar10.distorted_inputs()
+
+    # Build a Graph that computes the logits predictions from the
+    # inference model.
+    logits_list, logits_agg = cifar10.inference_n_models(images, False, n)
+
+    # Calculate loss.
+    loss = cifar10.ortho_loss(logits_list, logits_agg, labels, alpha)
+
+    # Build a Graph that trains the model with one batch of examples and
+    # updates the model parameters.
+    train_op = cifar10.train(loss, global_step)
+
+    # do it
+    with tf.train.MonitoredTrainingSession(
+        checkpoint_dir=FLAGS.train_dir,
+        hooks=[tf.train.StopAtStepHook(last_step=FLAGS.max_steps),
+               tf.train.NanTensorHook(loss),
+               _LoggerHook(loss)],
+        config=tf.ConfigProto(
+            log_device_placement=FLAGS.log_device_placement)) as mon_sess:
+      while not mon_sess.should_stop():
+        mon_sess.run(train_op)
+
+
+
 def main(argv=None):  # pylint: disable=unused-argument
   cifar10.maybe_download_and_extract()
+
+  # MJP: the n>1 case is for the "orthogonal" representation experiment
+  #      n=1 is the usual network
+  n = 1
+  if n > 1:
+      FLAGS.train_dir = FLAGS.train_dir + "n%02d" % n
+      print('\n*****\nWARNING - USING EXPERIMENTAL VERSION OF THIS MODEL!!!\n*****\n')
+
   if tf.gfile.Exists(FLAGS.train_dir):
     tf.gfile.DeleteRecursively(FLAGS.train_dir)
   tf.gfile.MakeDirs(FLAGS.train_dir)
-  train()
+
+  if n == 1:
+    train()
+  else:
+    train_n()
 
 
 if __name__ == '__main__':

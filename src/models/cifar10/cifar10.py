@@ -40,6 +40,7 @@ import os
 import re
 import sys
 import tarfile
+import pdb
 
 from six.moves import urllib
 import tensorflow as tf
@@ -190,7 +191,8 @@ def inputs(eval_data):
   return images, labels
 
 
-def inference(images):
+
+def inference(images, reuse, namespace='default'):
   """Build the CIFAR-10 model.
 
   Args:
@@ -199,13 +201,20 @@ def inference(images):
   Returns:
     Logits.
   """
+  with tf.variable_scope(namespace, reuse=reuse):
+    return _inference(images, reuse)
+
+
+def _inference(images, reuse):
+  """ Internal version of inference()
+  """
   # We instantiate all variables using tf.get_variable() instead of
   # tf.Variable() in order to share variables across multiple GPU training runs.
   # If we only ran this model on a single GPU, we could simplify this function
   # by replacing all instances of tf.get_variable() with tf.Variable().
   #
   # conv1
-  with tf.variable_scope('conv1') as scope:
+  with tf.variable_scope('conv1', reuse=reuse) as scope:
     kernel = _variable_with_weight_decay('weights',
                                          shape=[5, 5, 3, 64],
                                          stddev=5e-2,
@@ -224,7 +233,7 @@ def inference(images):
                     name='norm1')
 
   # conv2
-  with tf.variable_scope('conv2') as scope:
+  with tf.variable_scope('conv2', reuse=reuse) as scope:
     kernel = _variable_with_weight_decay('weights',
                                          shape=[5, 5, 64, 64],
                                          stddev=5e-2,
@@ -243,7 +252,7 @@ def inference(images):
                          strides=[1, 2, 2, 1], padding='SAME', name='pool2')
 
   # local3
-  with tf.variable_scope('local3') as scope:
+  with tf.variable_scope('local3', reuse=reuse) as scope:
     # Move everything into depth so we can perform a single matrix multiply.
     reshape = tf.reshape(pool2, [FLAGS.batch_size, -1])
     dim = reshape.get_shape()[1].value
@@ -254,7 +263,7 @@ def inference(images):
     _activation_summary(local3)
 
   # local4
-  with tf.variable_scope('local4') as scope:
+  with tf.variable_scope('local4', reuse=reuse) as scope:
     weights = _variable_with_weight_decay('weights', shape=[384, 192],
                                           stddev=0.04, wd=0.004)
     biases = _variable_on_cpu('biases', [192], tf.constant_initializer(0.1))
@@ -266,11 +275,12 @@ def inference(images):
   # tf.nn.sparse_softmax_cross_entropy_with_logits accepts the unscaled logits
   # and performs the softmax internally for efficiency.
   #
-  # MJP: changed "softmax_layer" to "linear_layer";  
+  # MJP: changed name from "softmax_layer" to "linear_layer";  
   # This is for cleverhans, which inspects the layer name to determine
-  # whether a softmax operation was applied.
+  # whether a softmax operation was applied (which isn't great, but whatever).
+  #
   #with tf.variable_scope('softmax_linear') as scope:
-  with tf.variable_scope('linear_layer') as scope:
+  with tf.variable_scope('linear_layer', reuse=reuse) as scope:
     weights = _variable_with_weight_decay('weights', [192, NUM_CLASSES],
                                           stddev=1/192.0, wd=0.0)
     biases = _variable_on_cpu('biases', [NUM_CLASSES],
@@ -279,6 +289,7 @@ def inference(images):
     _activation_summary(linear_layer)
 
   return linear_layer
+
 
 
 def loss(logits, labels):
@@ -303,6 +314,119 @@ def loss(logits, labels):
   # The total loss is defined as the cross entropy loss plus all of the weight
   # decay terms (L2 loss).
   return tf.add_n(tf.get_collection('losses'), name='total_loss')
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# BEGIN: multi-model code (mjp)
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+def inference_n_models(images, reuse, n):
+  '''  Creates n copies of the CIFAR-10 model (that will be "glued" together).
+  '''
+  logits_list = [inference(images, reuse, 'model-%d' % x) for x in range(n)]  # individual contributions
+  logits_agg = tf.add_n(logits_list, name='logit_agg')                        # aggregate decision
+  return logits_list, logits_agg
+
+
+
+def ortho_loss(logits_list, logits_agg, labels, alpha):
+  """ Here we experiment with combining losses from multiple, identical architectures.
+
+      The overall loss includes a term which promotes mutually orthogonal "representations".
+      Here, by "representation" we refer to the weights of the final linear layer.
+      The idea is to encourage some diversity in the sub-networks.
+
+      logits_list : a list of tensors with shape (#_mini_batch, #_classes) 
+                    corresponding to outputs from each individual model (assumed logits)
+
+      logits_agg  : the tensorflow variable which represents the aggregation of logits_list.
+                    
+      labels      : tensorflow object corresponding to the true class labels
+
+      alpha       : scalar coefficient applied to ortho loss term(s)
+
+      Note: initial instability may cause this loss to go NaN.
+            Re-running with different initial conditions seems to help sometimes....
+      (mjp)
+  """
+  labels = tf.cast(labels, tf.int64)  # this is what I usually denote "y"
+  n = len(logits_list)
+
+  #--------------------------------------------------
+  # Crossentropy loss 
+  #--------------------------------------------------
+  if False:
+    # I don't like this implementation b/c it could drive all but one 
+    # network's output to 0 and rely entirely on the single non-zero network!
+    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                      labels=labels, logits=logits_agg, name='cross_entropy_per_example')
+    cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
+    tf.add_to_collection('losses', cross_entropy_mean)
+  else:
+    # TODO: make sure it is indeed true that if each individual network works
+    #       well, so does the aggregate/sum.  Should be ok since each is
+    #       taking the argmax??
+    for ii, logits_i in enumerate(logits_list):
+      cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                         labels=labels, logits=logits_i, name='cross_entropy_per_example_%d' % ii)
+      cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy_%d' % ii)
+      cross_entropy_mean = cross_entropy_mean / n  # normalize contribution of this network
+      tf.add_to_collection('losses', cross_entropy_mean)
+
+
+  #--------------------------------------------------
+  # Loss term to encourage "orthogonal" representations.
+  #
+  # For now, we just sum upper triangular portion of the covariance matrix .
+  # (includes contributions from all pairs of networks)
+  #--------------------------------------------------
+  for idx, logits in enumerate(logits_list):
+
+    for ii in range(idx+1, len(logits_list)):
+      if True:
+        # Approximation - pushes the desire for orthogonal representations 
+        # somewhere into the network (vs within a precise set of layer parameters)
+        v = logits_list[ii]
+        w = logits
+
+        # normalize vectors.
+        # observe these are batches/rows of vectors, so we normalize each row independently.
+        v = v / (tf.norm(v, ord='euclidean', axis=1, keep_dims=True) + 1e-6)
+        w = w / (tf.norm(w, ord='euclidean', axis=1, keep_dims=True) + 1e-6)
+        
+        # average dot product over all examples in mini-batch
+        dot_product_batch = tf.multiply(v,w)
+        dot_product_batch = tf.reduce_sum(dot_product_batch, axis=1)
+        dot_product_batch = tf.abs(dot_product_batch)
+        penalty = alpha * tf.reduce_mean(dot_product_batch)
+
+      else:
+        # push gradients to be orthogonal??
+
+        # ** WARNING ** 
+        # Here we make very specific assumption about how model is organized!!
+        # ** WARNING **
+        def get_upstream_matrix(ll):
+          assert(ll.op.type == 'Add')
+          assert(ll.op.inputs[0].op.type == 'MatMul')
+          return ll.op.inputs[0].op.inputs[1] # assume second input is parameter matrix
+
+        w = get_upstream_matrix(logits)
+        v = get_upstream_matrix(logits_list[ii])
+        print(v.shape, w.shape) # TEMP
+        raise RuntimeError("still working here...")
+
+      # Add this pair of models' contribution to the overall loss.
+      tf.add_to_collection('losses', penalty)
+
+  # note: the total loss includes also the weight decay terms (l2 loss) included
+  #       elsewhere when creating the model.
+  return tf.add_n(tf.get_collection('losses'), name='total_loss')
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# END: multi-model code (mjp)
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 
 
 def _add_loss_summaries(total_loss):
